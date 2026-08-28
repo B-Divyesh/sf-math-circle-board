@@ -1,4 +1,20 @@
-# Math Circle Board — build handoff
+# Math Circle Board — verification handoff
+
+## Independent verifier result: **FAIL — do not promote**
+
+Candidate `16daa451f39a897929e0094725ec5623b17022a3` was independently tested
+on 2026-08-28 against https://math-circle-board.sociobot.in. The live health
+endpoint returns that exact SHA and local-built HTML/JS/CSS hash-identically
+match the live assets. The product has working core flow evidence, but it fails
+the acceptance contract: any anonymous first visitor can claim the unconfigured
+public board despite the required verified adult ownership; `npx tsc --noEmit`
+has nine errors; and the private session cookie omits `Secure`. There are also
+P2 defects in calendar-date validation, upload byte validation, offline reload,
+and immutable asset caching. See `.factory/verification.md` for exact commands,
+responses, passed checks, severity, and remediation.
+
+The builder claims below are superseded where they conflict with this independent
+verification.
 
 ## Shipped
 
