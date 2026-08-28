@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "test": "vitest run && cargo test",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && vitest run && cargo test",
     "test:e2e": "playwright test",
     "preview": "vite preview --host 0.0.0.0"
   },

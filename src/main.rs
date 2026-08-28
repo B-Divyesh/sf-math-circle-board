@@ -1,6 +1,7 @@
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
+    middleware,
     response::{IntoResponse, Response},
     routing::{delete, get, post},
     Json, Router,
@@ -29,6 +30,8 @@ use tower_http::{
 struct AppState {
     db: SqlitePool,
     upload_dir: PathBuf,
+    owner_invite_hash: Option<String>,
+    owner_invite_path: Option<PathBuf>,
 }
 type Shared = Arc<AppState>;
 
@@ -61,6 +64,45 @@ fn password_hash(pass: &str, salt: &str) -> String {
 }
 fn valid_label(s: &str, max: usize) -> bool {
     !s.trim().is_empty() && s.trim().chars().count() <= max
+}
+fn valid_iso_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes
+            .iter()
+            .enumerate()
+            .all(|(i, byte)| matches!(i, 4 | 7) || byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let year = value[0..4].parse::<u32>().ok();
+    let month = value[5..7].parse::<u32>().ok();
+    let day = value[8..10].parse::<u32>().ok();
+    let (Some(year), Some(month), Some(day)) = (year, month, day) else {
+        return false;
+    };
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    year > 0 && (1..=days).contains(&day)
+}
+fn detected_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    let format = image::guess_format(bytes).ok()?;
+    let mime = match format {
+        image::ImageFormat::Jpeg => "image/jpeg",
+        image::ImageFormat::Png => "image/png",
+        image::ImageFormat::WebP => "image/webp",
+        _ => return None,
+    };
+    image::load_from_memory_with_format(bytes, format).ok()?;
+    Some(mime)
 }
 fn cookie(headers: &HeaderMap, key: &str) -> Option<String> {
     headers
@@ -108,6 +150,8 @@ struct SetupInput {
     facilitator: String,
     passphrase: String,
     group_name: String,
+    owner_code: String,
+    adult_confirmed: bool,
 }
 #[derive(Deserialize)]
 struct LoginInput {
@@ -136,10 +180,11 @@ async fn setup(
     if !valid_label(&input.facilitator, 80)
         || !valid_label(&input.group_name, 100)
         || input.passphrase.chars().count() < 8
+        || !input.adult_confirmed
     {
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
-            "Use a facilitator name, group name, and passphrase of at least 8 characters.".into(),
+            "Use a facilitator name, group name, an adult confirmation, and a passphrase of at least 8 characters.".into(),
         ));
     }
     let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings")
@@ -152,12 +197,28 @@ async fn setup(
             "This board is already owned.".into(),
         ));
     }
+    let Some(owner_invite_hash) = &s.owner_invite_hash else {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "This deployment needs an installer-issued adult setup code before it can be claimed."
+                .into(),
+        ));
+    };
+    if password_hash(&input.owner_code, "mcb-owner-invite") != *owner_invite_hash {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "That adult setup code did not match this deployment. Ask the deployment operator for the code.".into(),
+        ));
+    }
     let salt = random_hex(16);
     let hash = password_hash(&input.passphrase, &salt);
     let mut tx = s.db.begin().await.map_err(db_err)?;
     sqlx::query("INSERT INTO settings(id,facilitator,group_name,pass_salt,pass_hash,created_at) VALUES(1,?,?,?,?,?)")
         .bind(input.facilitator.trim()).bind(input.group_name.trim()).bind(salt).bind(hash).bind(now()).execute(&mut *tx).await.map_err(db_err)?;
     tx.commit().await.map_err(db_err)?;
+    if let Some(path) = &s.owner_invite_path {
+        let _ = tokio::fs::remove_file(path).await;
+    }
     create_session(&s.db).await
 }
 async fn login(
@@ -201,7 +262,7 @@ async fn create_session(db: &SqlitePool) -> ApiResult<impl IntoResponse> {
     h.insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&format!(
-            "mcb_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000"
+            "mcb_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000"
         ))
         .unwrap(),
     );
@@ -218,7 +279,9 @@ async fn logout(State(s): State<Shared>, headers: HeaderMap) -> ApiResult<impl I
     let mut h = HeaderMap::new();
     h.insert(
         header::SET_COOKIE,
-        HeaderValue::from_static("mcb_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"),
+        HeaderValue::from_static(
+            "mcb_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
+        ),
     );
     Ok((h, Json(json!({"ok":true}))))
 }
@@ -360,10 +423,13 @@ async fn add_session(
     Json(v): Json<SessionInput>,
 ) -> ApiResult<Json<Value>> {
     require_auth(&s, &headers).await?;
-    if !valid_label(&v.title, 100) || v.session_date.len() != 10 || v.focus.chars().count() > 300 {
+    if !valid_label(&v.title, 100)
+        || !valid_iso_date(&v.session_date)
+        || v.focus.chars().count() > 300
+    {
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
-            "Enter a title, date, and a focus under 300 characters.".into(),
+            "Enter a title, a real calendar date, and a focus under 300 characters.".into(),
         ));
     }
     let res = sqlx::query(
@@ -531,13 +597,6 @@ async fn upload(
         .chars()
         .take(120)
         .collect::<String>();
-    let mime = field.content_type().unwrap_or("").to_string();
-    if !["image/jpeg", "image/png", "image/webp"].contains(&mime.as_str()) {
-        return Err(ApiError(
-            StatusCode::BAD_REQUEST,
-            "Use a JPEG, PNG, or WebP image.".into(),
-        ));
-    }
     let bytes = field.bytes().await.map_err(|_| {
         ApiError(
             StatusCode::BAD_REQUEST,
@@ -550,6 +609,10 @@ async fn upload(
             "Keep each image under 5 MB.".into(),
         ));
     }
+    let mime = detected_image_mime(&bytes).ok_or(ApiError(
+        StatusCode::BAD_REQUEST,
+        "Use a valid JPEG, PNG, or WebP image file.".into(),
+    ))?;
     let stored = random_hex(24);
     tokio::fs::write(s.upload_dir.join(&stored), &bytes)
         .await
@@ -687,6 +750,11 @@ fn app(state: Shared, dist: PathBuf) -> Router {
         )
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(6 * 1024 * 1024))
+        .layer(middleware::from_fn(immutable_hashed_assets))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
@@ -708,6 +776,34 @@ fn app(state: Shared, dist: PathBuf) -> Router {
             HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
         ))
         .layer(TraceLayer::new_for_http())
+}
+async fn immutable_hashed_assets(
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> Response {
+    let immutable = request.uri().path().starts_with("/assets/");
+    let mut response = next.run(request).await;
+    if immutable && response.status().is_success() {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    }
+    response
+}
+fn owner_invite(data_dir: &std::path::Path) -> std::io::Result<(String, bool)> {
+    if let Ok(code) = env::var("MCB_OWNER_INVITE") {
+        return Ok((code, true));
+    }
+    let path = data_dir.join("owner-invite.txt");
+    if path.exists() {
+        return std::fs::read_to_string(path).map(|code| (code.trim().to_string(), false));
+    }
+    let code = random_hex(24);
+    std::fs::write(&path, &code)?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    Ok((code, false))
 }
 #[tokio::main]
 async fn main() {
@@ -734,10 +830,26 @@ async fn main() {
         .await
         .expect("open database");
     migrate(&db).await.expect("migrate database");
-    tracing::info!(port,data_dir=%data_dir.display(),"configuration ready; database path supplied or defaulted, session tokens generated per sign-in");
+    let configured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings")
+        .fetch_one(&db)
+        .await
+        .expect("read configuration");
+    let (owner_invite_hash, owner_invite_path, owner_invite_supplied) = if configured == 0 {
+        let (code, supplied) = owner_invite(&data_dir).expect("create owner invite");
+        (
+            Some(password_hash(&code, "mcb-owner-invite")),
+            (!supplied).then(|| data_dir.join("owner-invite.txt")),
+            supplied,
+        )
+    } else {
+        (None, None, false)
+    };
+    tracing::info!(port,data_dir=%data_dir.display(),owner_invite_supplied,"configuration ready; database path supplied or defaulted, owner invite generated or supplied, session tokens generated per sign-in");
     let state = Arc::new(AppState {
         db,
         upload_dir: data_dir.join("uploads"),
+        owner_invite_hash,
+        owner_invite_path,
     });
     let listener = TcpListener::bind(("0.0.0.0", port)).await.expect("bind");
     axum::serve(listener, app(state, dist))
@@ -754,10 +866,14 @@ mod tests {
     use axum::body::Body;
     use axum::http::Request;
     use tower::ServiceExt;
-    #[tokio::test]
-    async fn health_works() {
+
+    async fn test_app(invite: &str) -> (Router, Shared, PathBuf) {
         let dir = std::env::temp_dir().join(format!("mcb-test-{}", random_hex(6)));
         tokio::fs::create_dir_all(dir.join("uploads"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(dir.join("assets")).await.unwrap();
+        tokio::fs::write(dir.join("assets/app-abc123.js"), "console.log('cached')")
             .await
             .unwrap();
         let db = SqlitePoolOptions::new()
@@ -769,8 +885,16 @@ mod tests {
         let state = Arc::new(AppState {
             db,
             upload_dir: dir.join("uploads"),
+            owner_invite_hash: Some(password_hash(invite, "mcb-owner-invite")),
+            owner_invite_path: None,
         });
-        let response = app(state, dir)
+        (app(state.clone(), dir.clone()), state, dir)
+    }
+
+    #[tokio::test]
+    async fn health_works() {
+        let (router, _, _) = test_app("adult-setup-code-0123456789").await;
+        let response = router
             .oneshot(
                 Request::builder()
                     .uri("/health")
@@ -780,6 +904,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::STRICT_TRANSPORT_SECURITY)
+                .unwrap(),
+            "max-age=63072000; includeSubDomains"
+        );
     }
     #[test]
     fn labels_and_hashes_are_stable() {
@@ -788,6 +919,116 @@ mod tests {
         assert_eq!(
             password_hash("secret", "salt"),
             password_hash("secret", "salt")
+        );
+    }
+
+    #[test]
+    fn dates_and_images_are_validated_from_real_values() {
+        assert!(valid_iso_date("2028-02-29"));
+        assert!(!valid_iso_date("2026-99-99"));
+        assert!(!valid_iso_date("2025-02-29"));
+        assert_eq!(detected_image_mime(b"not an image"), None);
+        let png = BASE64
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+            .unwrap();
+        assert_eq!(detected_image_mime(&png), Some("image/png"));
+    }
+
+    #[tokio::test]
+    async fn ownership_cookie_date_upload_and_asset_cache_regressions() {
+        let invite = "adult-setup-code-0123456789";
+        let (router, state, _) = test_app(invite).await;
+        let wrong = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/setup")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"facilitator":"Morgan","group_name":"Saturday Circle","passphrase":"lantern-path-2026","owner_code":"not-the-code","adult_confirmed":true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(wrong.status(), StatusCode::FORBIDDEN);
+
+        let setup = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/setup")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(format!(r#"{{"facilitator":"Morgan","group_name":"Saturday Circle","passphrase":"lantern-path-2026","owner_code":"{invite}","adult_confirmed":true}}"#)))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(setup.status(), StatusCode::OK);
+        let set_cookie = setup
+            .headers()
+            .get(header::SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(set_cookie.contains("HttpOnly; Secure; SameSite=Strict"));
+        let session_cookie = set_cookie.split(';').next().unwrap();
+
+        let invalid_date = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sessions")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(r#"{"title":"Impossible date","session_date":"2026-99-99","focus":"Boundary"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid_date.status(), StatusCode::BAD_REQUEST);
+
+        let forged_upload = concat!(
+            "--mcb\r\n",
+            "Content-Disposition: form-data; name=\"image\"; filename=\"hostname.png\"\r\n",
+            "Content-Type: image/png\r\n\r\n",
+            "not a PNG image\r\n",
+            "--mcb--\r\n"
+        );
+        let forged = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/attempts/1/upload")
+                    .header(header::CONTENT_TYPE, "multipart/form-data; boundary=mcb")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(forged_upload))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(forged.status(), StatusCode::BAD_REQUEST);
+        let attachments: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM attachments")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(attachments, 0);
+
+        let asset = router
+            .oneshot(
+                Request::builder()
+                    .uri("/assets/app-abc123.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(asset.status(), StatusCode::OK);
+        assert_eq!(
+            asset.headers().get(header::CACHE_CONTROL).unwrap(),
+            "public, max-age=31536000, immutable"
         );
     }
 }

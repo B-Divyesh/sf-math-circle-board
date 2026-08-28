@@ -14,23 +14,31 @@ npm run build
 cargo run
 ```
 
-Open `http://localhost:8080`. The server runs with no required environment variables and creates `./data/board.db` plus `./data/uploads/` on first boot. Optional configuration:
+Open `http://localhost:8080`. The server runs with no required environment variables and creates `./data/board.db` plus `./data/uploads/` on first boot. Before anyone can claim an empty deployment, it also creates a one-time 48-character adult setup code in `./data/owner-invite.txt` (mode `0600`). Transfer that code only to the verified adult who will own the circle, then delete any copied value after setup; the server removes the file after a successful claim. This prevents a public first visitor from taking ownership. Optional configuration:
 
 - `PORT` — HTTP port, default `8080`
 - `DATA_DIR` — persistent SQLite/upload directory, default `./data`
 - `DIST_DIR` — built frontend directory, default `./dist`
+- `MCB_OWNER_INVITE` — optional installer-issued adult setup code; overrides the generated code and is never logged
 
 For live frontend development, run `cargo run` and `npm run dev` in separate terminals, then open Vite’s URL.
 
 ## Test and build
 
 ```sh
-npm test          # Vitest unit tests + Rust tests
+npm test          # TypeScript check + Vitest unit tests + Rust tests
 npm run build     # reproducible frontend output in dist/
 npm run test:e2e  # with the app running on http://127.0.0.1:4173
 ```
 
-The end-to-end suite covers initial adult setup, a complete session/learner/attempt/recap path, mobile sign-in, legal pages, and serious/critical axe violations.
+For a reproducible browser run, start the backend with an explicit local-only setup code, then run Playwright with the matching value:
+
+```sh
+MCB_OWNER_INVITE=adult-setup-code-0123456789 cargo run
+MCB_TEST_OWNER_CODE=adult-setup-code-0123456789 PLAYWRIGHT_BASE_URL=http://127.0.0.1:8080 npm run test:e2e -- --workers=1
+```
+
+The end-to-end suite covers protected adult setup, a complete session/learner/attempt/recap path, mobile sign-in, an offline 390 px cached-board reload, legal pages, and serious/critical axe violations.
 
 ## Container deployment
 
@@ -43,7 +51,7 @@ The multi-stage image builds the Vite frontend and Rust server, runs as a non-ro
 
 ## Privacy and billing
 
-All board routes require the facilitator passphrase. Session tokens are random, HttpOnly, and SameSite=Strict; uploaded images are served only after authorization. The app contains no analytics, advertising, remote fonts, or runtime CDN scripts. `/privacy` and `/terms` provide the product policies.
+All board routes require the facilitator passphrase. Session tokens are random, HttpOnly, Secure, and SameSite=Strict; uploaded images are byte-decoded before storage and served only after authorization. The app contains no analytics, advertising, remote fonts, or runtime CDN scripts. `/privacy` and `/terms` provide the product policies.
 
 The free board includes the complete core workflow and export. Circle Plus is a $39 one-time license that unlocks a reusable strategy palette and future organization controls through Sociobot’s hosted billing API; no payment provider is embedded here.
 

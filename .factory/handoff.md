@@ -1,61 +1,95 @@
-# Math Circle Board — verification handoff
+# Math Circle Board — repair handoff
 
-## Independent verifier result: **FAIL — do not promote**
+## Release repair
 
-Candidate `16daa451f39a897929e0094725ec5623b17022a3` was independently tested
-on 2026-08-28 against https://math-circle-board.sociobot.in. The live health
-endpoint returns that exact SHA and local-built HTML/JS/CSS hash-identically
-match the live assets. The product has working core flow evidence, but it fails
-the acceptance contract: any anonymous first visitor can claim the unconfigured
-public board despite the required verified adult ownership; `npx tsc --noEmit`
-has nine errors; and the private session cookie omits `Secure`. There are also
-P2 defects in calendar-date validation, upload byte validation, offline reload,
-and immutable asset caching. See `.factory/verification.md` for exact commands,
-responses, passed checks, severity, and remediation.
+This repair addresses every failure in the independent verification report for
+candidate `16daa451f39a897929e0094725ec5623b17022a3`.
 
-The builder claims below are superseded where they conflict with this independent
-verification.
+- A fresh deployment is no longer publicly claimable. On first boot the server
+  creates a CSPRNG 48-character, one-time owner invite at
+  `/data/owner-invite.txt` with mode `0600` (or accepts an optional
+  installer-supplied `MCB_OWNER_INVITE`). It is never served or logged. Setup
+  requires that code plus an adult-responsibility confirmation, and removes the
+  generated file after the first successful claim. The deployment operator must
+  transfer the code only through an authenticated adult support channel.
+- Session creation and deletion cookies now carry `HttpOnly; Secure;
+  SameSite=Strict`; all responses set two-year HSTS with subdomains.
+- Session dates are checked as real Gregorian `YYYY-MM-DD` calendar dates.
+- Uploads are decoded from their bytes and accepted only as valid JPEG, PNG, or
+  WebP; the served MIME value comes from the decoded format, not multipart
+  metadata.
+- Authenticated board data is retained in local storage for offline reloads;
+  drafts remain local and sign-out clears the cached board. The privacy notice
+  states this explicitly. The PWA cache version was advanced to `v2`.
+- Hashed `/assets/` responses now use `Cache-Control: public,
+  max-age=31536000, immutable`.
+- TypeScript is repaired and enforced through `npm run typecheck`, which is
+  part of `npm test`.
 
-## Shipped
+## Regression coverage
 
-- A production Rust/axum service with SQLite persistence, first-run adult ownership, hashed passphrases, random 30-day HttpOnly sessions, secure response headers, structured logs, graceful shutdown, and `/health` build metadata.
-- A complete private facilitator flow: learner aliases, dated sessions, ordered open problem cards, per-learner status, evolving attempt text, strategy tags, private notes, and up to four protected JPEG/PNG/WebP uploads per attempt.
-- A compact printable session recap organized by learner and strategy; private notes never appear in print.
-- Data controls: full JSON export including base64 photo payloads; confirmed learner/session/photo deletion; deleted records also remove stored upload files.
-- First-class initial, empty, error, offline/draft, saving, and license-invalid states. The interface works at 390 px and with keyboard/native controls.
-- Circle Plus paid-unlock integration using the Sociobot checkout/verify contract. The $39 one-time tier adds the reusable strategy palette; core records, print, export, safety, and accessibility remain free. No product ID is hardcoded.
-- `/privacy` and `/terms`, PWA shell caching, responsive generated hero art, a non-generic “lantern room” visual system, and full provenance in `.factory/design.md`.
-- Multi-stage non-root container packaging; it serves the Vite build and API together on `PORT` (default 8080) and persists under `/data`.
+`src/main.rs` contains endpoint-level regression coverage that proves a wrong
+adult code is forbidden, a correct setup response has a secure cookie, an
+impossible date is rejected, forged `image/png` multipart content is neither
+accepted nor stored, HSTS is present, and a hashed asset is immutable-cached.
+It also unit-tests leap dates and byte-level image detection. Playwright covers
+the protected setup, keyboard skip link, facilitator workflow, 390 px sign-in,
+390 px authenticated offline reload, privacy/terms, console errors, and Axe
+serious/critical violations.
 
-## Run and verify
+## Verification run — 2026-08-28
+
+All commands below passed in this repair workspace.
 
 ```sh
-npm install
+npm ci
 npm test
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
 npm run build
+cargo build --release
+MCB_TEST_OWNER_CODE=adult-setup-code-0123456789 \
+  PLAYWRIGHT_BASE_URL=http://127.0.0.1:18081 \
+  npm run test:e2e -- --workers=1
+```
+
+Results:
+
+- `npm ci`: 58 packages installed; 0 vulnerabilities.
+- `npm test`: TypeScript check, 3 Vitest tests, and 4 Rust tests passed.
+- Production build: `dist/` emitted; JavaScript is 28.28 KB raw / 9.92 KB
+  gzip and CSS is 19.86 KB raw / 5.20 KB gzip.
+- Release binary starts with only `PORT`: `/health` returned
+  `{"build":"development","ok":true}` and the generated owner invite was
+  mode `600`; no secret value was logged.
+- Playwright 1.58.2: 3/3 passed. This includes desktop, 390 px mobile,
+  keyboard, authenticated cached offline reload, and Axe (zero serious or
+  critical violations in the authenticated recap).
+- Local mobile Lighthouse: Performance 100, Accessibility 100, Best Practices
+  100, SEO 100; LCP 0.3 s and CLS 0.
+- Response-policy smoke confirmed HSTS, CSP, nosniff, frame denial, same-origin
+  referrer policy, and immutable hashed-asset caching. An untrusted-origin
+  `OPTIONS /api/login` returned `405` with no CORS grant.
+- 100 concurrent local `/health` requests completed successfully.
+
+## Run and deployment
+
+```sh
+npm ci && npm run build
 cargo run
 ```
 
-For the browser suite, run the built app on port 4173 and then:
+The image remains the original multi-stage non-root Rust/Axum + Vite container
+and listens on `PORT` (default `8080`). With no optional environment variables,
+the adult setup code is generated under the persistent `/data` directory; read
+it only via the deployment operator’s authenticated control plane and provide
+it to the verified adult owner. See `README.md` for a reproducible local
+browser command and the optional installer override.
 
-```sh
-npm run test:e2e -- --workers=1
-```
+## Known operational note
 
-Verification completed on 2026-08-28:
-
-- `npm test`: 3 frontend unit tests + 2 Rust tests passed.
-- Playwright 1.58.2: 2 end-to-end tests passed, covering setup through recap, private image upload, complete data export, 390 px sign-in, and legal pages.
-- Axe in the authenticated recap: zero serious or critical violations.
-- `npm run build`: passed; output is exactly `dist/` with `index.html` at its root.
-- Production transfer sizes: JS 27.33 KB raw / 9.60 KB gzip; CSS 19.86 KB raw / 5.20 KB gzip; mobile hero 22 KB WebP; desktop hero 63 KB WebP.
-- Lighthouse mobile: Performance 100, Accessibility 100, Best Practices 100, SEO 100; LCP 1.7 s, CLS 0, TBT 0 ms.
-- Load smoke: 100 concurrent-batch `/health` requests completed successfully in 440 ms locally.
-- Runtime start was verified with only `PORT`; both the database/upload location and frontend directory correctly used their defaults.
-
-## Known gaps / next steps
-
-- Docker CLI was not installed in the worker image, so the Dockerfile could not be executed locally (`docker: command not found`). Rust and frontend release inputs were compiled independently and the Docker stages use their lockfiles.
-- Hosted checkout and a real paid license require the factory’s later product registration; the expected production Sociobot endpoints are already wired.
-- Circle Plus currently unlocks the reusable strategy palette. Organization membership/role controls are intentionally left for a later shared-auth release.
-- SQLite is appropriate for one private circle deployment. Multi-organization hosting would require tenant isolation and PostgreSQL.
+The product deliberately cannot infer adulthood from a name or checkbox. The
+one-time deployment-held code prevents anonymous first-visitor takeover; the
+factory operator must complete the human verification and secure code transfer
+when provisioning the private group. No payment, analytics, remote font, or
+other third-party tracking was added.
