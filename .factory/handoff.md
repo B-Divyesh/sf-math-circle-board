@@ -61,7 +61,7 @@ All final commands passed from a clean npm install:
 npm ci
 npm test
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 npm run build
 cargo build --release
 cargo build --release --features test-auth # local E2E server only
@@ -104,13 +104,35 @@ No package/consumer check applies to this web-with-backend artifact. Docker is
 not installed in the worker image; the required multi-stage, non-root container
 is instead built by Azure Container Registry during deployment.
 
-## Deployment and remaining boundary
+## Deployment evidence and remaining boundary
 
-Deployment evidence is recorded after the final committed source is built and
-released with `/opt/fleet/lib/deploy-container.sh`. The production checks must
-confirm `/health` reports the deployed commit, the public gate names only the
-Sociobot CIAM authority, a live burst returns `429` with `Retry-After`, and the
-factory URL verifier passes.
+The repair and its verification handoff were committed and pushed to `main`.
+The factory container deployment completed successfully through ACR run
+`chf1`; `/health` then reported the exact deployed source commit
+`49138efdc9c9929cdb9360714c35f78126e7a800`. The final documentation-only
+revision is deployed once more after this evidence is committed so production
+and repository HEAD retain the live-identity invariant.
+
+Production checks at `https://math-circle-board.sociobot.in` passed:
+
+- `/api/status` reported an unconfigured board without granting authentication.
+  A 120-request concurrent status burst returned 42 × `200` and 78 × `429`;
+  a sampled rejection had `Retry-After: 1`.
+- Activating “Sign in with Microsoft” navigated to
+  `sociobotcustomers.ciamlogin.com/35c6fe40-0ec0-46b6-98c6-213ad4de6650/`
+  with client ID `25c704f4-465a-47af-80ab-2c489466b697`, the exact production
+  callback, authorization-code response type, and PKCE `S256` challenge.
+- The factory URL verifier found the correct title, `lang=en`, one `h1`,
+  `main`, no missing alt text, no unnamed buttons, and no console errors.
+- Fresh Chromium desktop (1366 px) and mobile (390 px) checks found no console
+  or page errors, no horizontal overflow, zero serious/critical axe findings,
+  a 44 px sign-in target, visible skip-link-first keyboard order, reduced
+  motion resolved to effectively instant transitions, and active service-worker
+  control. Initial requests remained same-origin.
+- Live response checks confirmed HSTS, the CIAM-aware CSP, nosniff, frame
+  denial, restrictive permissions, immutable hashed assets, and an untrusted
+  preflight response of `405` without CORS permission. The initial JavaScript
+  asset remained 32,027 bytes.
 
 No automated production user credential was available, so an actual account
 credential exchange was not performed. This is bounded by the successful live
