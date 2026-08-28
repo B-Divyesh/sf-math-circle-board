@@ -1,0 +1,57 @@
+import {test,expect} from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+
+test('facilitator completes a session record and recap',async({page})=>{
+  const consoleErrors:string[]=[];
+  page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text())});
+  page.on('pageerror',error=>consoleErrors.push(error.message));
+  await page.goto('/');
+  await expect.poll(()=>page.locator('.gate-art img').evaluate((img:HTMLImageElement)=>img.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole('heading',{level:1})).toHaveText('Follow every line of thinking.');
+  await page.getByLabel('Facilitator name').fill('Morgan');
+  await page.getByLabel('Circle name').fill('Saturday Circle');
+  await page.getByLabel('Create a passphrase').fill('lantern-path-2026');
+  await page.getByRole('button',{name:'Create private board'}).click();
+  await expect(page.getByText('Plan the first gathering')).toBeVisible();
+  await page.getByRole('button',{name:'New session'}).click();
+  await page.getByLabel('Session title').fill('Parity paths');
+  await page.getByLabel('Guiding focus').fill('What never changes?');
+  await page.getByRole('button',{name:'Add session'}).click();
+  await expect(page.getByText('The path through this session')).toBeVisible();
+  await page.getByRole('button',{name:'Add problem'}).click();
+  await page.getByLabel('Short title').fill('The coin trail');
+  await page.getByLabel('Open prompt').fill('Move one coin at a time. Which arrangements can you reach?');
+  await page.getByRole('button',{name:'Add to sequence'}).click();
+  await page.getByRole('link',{name:'Learners'}).click();
+  await page.getByLabel('Learner alias').fill('Ada');
+  await page.getByRole('button',{name:'Add learner'}).click();
+  await page.getByRole('link',{name:'Board',exact:true}).click();
+  await page.getByLabel('What they tried').fill('Marked odd gaps and tested the smallest row first.');
+  await page.locator('.status-option').filter({hasText:'Exploring'}).click();
+  await page.getByPlaceholder('e.g. draw a diagram').fill('Test a smaller case');
+  await page.getByRole('button',{name:'Add strategy'}).click();
+  await page.getByRole('button',{name:'Save attempt'}).click();
+  await expect(page.getByText('Attempt saved.')).toBeVisible();
+  await page.getByLabel('Add photo').setInputFiles('frontend/public/art/lantern-room-768.webp');
+  await expect(page.getByRole('img',{name:/Uploaded attempt/})).toBeVisible();
+  const exported=await page.request.get('/api/export');
+  expect(exported.ok()).toBeTruthy();
+  expect((await exported.json()).attachment_files).toHaveLength(1);
+  await page.getByRole('button',{name:'Print recap'}).click();
+  await expect(page.getByText('Marked odd gaps and tested the smallest row first.')).toBeVisible();
+  const results=await new AxeBuilder({page}).analyze();
+  expect(results.violations.filter(v=>['serious','critical'].includes(v.impact||''))).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('legal pages and mobile sign-in remain usable',async({browser})=>{
+  const page=await browser.newPage({viewport:{width:390,height:844}});
+  await page.goto('/privacy');
+  await expect(page.getByRole('heading',{level:1})).toHaveText('A small record, kept private.');
+  await page.goto('/');
+  await expect(page.getByLabel('Passphrase')).toBeVisible();
+  await page.getByLabel('Passphrase').fill('lantern-path-2026');
+  await page.getByRole('button',{name:'Open private board'}).click();
+  await expect(page.getByRole('link',{name:'Learners'})).toBeVisible();
+  await expect(page.locator('body')).toHaveJSProperty('scrollWidth',390);
+});
