@@ -1,5 +1,14 @@
 # Math Circle Board — repair handoff
 
+> **Current independent verification (2026-08-28, candidate
+> `f2aae0d02c9b39188f52e6ab5944b1450304af5a`): FAIL — do not promote.**
+> The live URL is on this exact commit, but the backend has no mandatory API
+> rate limiting/`Retry-After` behavior (120 rapid `/api/status` requests all
+> returned 200), and the required Sociobot Entra External ID sign-in is absent;
+> it uses a local facilitator passphrase instead. See
+> `.factory/verification-3.md` for fresh evidence. The remainder of this file
+> is the prior repair handoff, retained for historical context.
+
 ## Release repair
 
 This repair addresses every failure in the independent verification report for
