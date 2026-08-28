@@ -7,18 +7,23 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{sqlite::SqlitePoolOptions, FromRow, SqlitePool};
 use std::{
+    collections::HashMap,
     env,
     path::PathBuf,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
+use tower_governor::{
+    governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
+};
 use tower_http::{
     limit::RequestBodyLimitLayer,
     services::{ServeDir, ServeFile},
@@ -32,6 +37,7 @@ struct AppState {
     upload_dir: PathBuf,
     owner_invite_hash: Option<String>,
     owner_invite_path: Option<PathBuf>,
+    auth: AuthState,
 }
 type Shared = Arc<AppState>;
 
@@ -39,10 +45,174 @@ type Shared = Arc<AppState>;
 struct ApiError(StatusCode, String);
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.0, Json(json!({"error": self.1}))).into_response()
+        let mut response = (self.0, Json(json!({"error": self.1}))).into_response();
+        if response.status() == StatusCode::UNAUTHORIZED {
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static("Bearer realm=\"math-circle-board\""),
+            );
+        }
+        response
     }
 }
 type ApiResult<T> = Result<T, ApiError>;
+
+const DEFAULT_TENANT_ID: &str = "35c6fe40-0ec0-46b6-98c6-213ad4de6650";
+const DEFAULT_TENANT_SUBDOMAIN: &str = "sociobotcustomers";
+const DEFAULT_CLIENT_ID: &str = "25c704f4-465a-47af-80ab-2c489466b697";
+
+#[derive(Clone)]
+struct AuthState {
+    tenant_id: String,
+    client_id: String,
+    discovery_url: String,
+    metadata: Arc<RwLock<Option<OidcMetadata>>>,
+    keys: Arc<RwLock<HashMap<String, DecodingKey>>>,
+    refreshed_at: Arc<RwLock<i64>>,
+    client: reqwest::Client,
+    #[cfg(any(test, feature = "test-auth"))]
+    test_token: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+struct OidcMetadata {
+    issuer: String,
+    jwks_uri: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EntraClaims {
+    aud: String,
+    exp: usize,
+    iss: String,
+    nbf: Option<usize>,
+    oid: String,
+    tid: String,
+}
+
+impl AuthState {
+    fn from_env() -> Self {
+        let tenant_id = env::var("ENTRA_TENANT_ID").unwrap_or_else(|_| DEFAULT_TENANT_ID.into());
+        let subdomain =
+            env::var("ENTRA_TENANT_SUBDOMAIN").unwrap_or_else(|_| DEFAULT_TENANT_SUBDOMAIN.into());
+        let client_id = env::var("ENTRA_CLIENT_ID").unwrap_or_else(|_| DEFAULT_CLIENT_ID.into());
+        Self {
+            discovery_url: format!(
+                "https://{subdomain}.ciamlogin.com/{tenant_id}/v2.0/.well-known/openid-configuration"
+            ),
+            tenant_id,
+            client_id,
+            metadata: Arc::new(RwLock::new(None)),
+            keys: Arc::new(RwLock::new(HashMap::new())),
+            refreshed_at: Arc::new(RwLock::new(0)),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(8))
+                .build()
+                .expect("build identity client"),
+            #[cfg(any(test, feature = "test-auth"))]
+            test_token: env::var("MCB_TEST_AUTH_TOKEN").ok(),
+        }
+    }
+
+    async fn refresh(&self) -> Result<(), String> {
+        let metadata = self
+            .client
+            .get(&self.discovery_url)
+            .send()
+            .await
+            .map_err(|e| format!("OIDC discovery failed: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("OIDC discovery failed: {e}"))?
+            .json::<OidcMetadata>()
+            .await
+            .map_err(|e| format!("OIDC discovery was invalid: {e}"))?;
+        let jwks = self
+            .client
+            .get(&metadata.jwks_uri)
+            .send()
+            .await
+            .map_err(|e| format!("OIDC keys failed: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("OIDC keys failed: {e}"))?
+            .json::<JwkSet>()
+            .await
+            .map_err(|e| format!("OIDC keys were invalid: {e}"))?;
+        let mut keys = HashMap::new();
+        for jwk in &jwks.keys {
+            if let (Some(kid), Ok(key)) = (jwk.common.key_id.as_ref(), DecodingKey::from_jwk(jwk)) {
+                keys.insert(kid.clone(), key);
+            }
+        }
+        if keys.is_empty() {
+            return Err("OIDC returned no usable signing keys".into());
+        }
+        *self.metadata.write().await = Some(metadata);
+        *self.keys.write().await = keys;
+        *self.refreshed_at.write().await = now();
+        Ok(())
+    }
+
+    async fn validate(&self, token: &str) -> Result<String, ApiError> {
+        #[cfg(any(test, feature = "test-auth"))]
+        if self.test_token.as_deref() == Some(token) {
+            return Ok("00000000-0000-4000-8000-000000000001".into());
+        }
+        let header = decode_header(token).map_err(|_| unauthorized())?;
+        if header.alg != Algorithm::RS256 {
+            return Err(unauthorized());
+        }
+        let kid = header.kid.ok_or_else(unauthorized)?;
+        let stale = now() - *self.refreshed_at.read().await >= 3600;
+        if stale || !self.keys.read().await.contains_key(&kid) {
+            self.refresh().await.map_err(|error| {
+                tracing::error!(%error, "could not refresh Entra signing keys");
+                ApiError(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Sign-in verification is temporarily unavailable. Try again.".into(),
+                )
+            })?;
+        }
+        let metadata = self
+            .metadata
+            .read()
+            .await
+            .clone()
+            .ok_or_else(unauthorized)?;
+        let key = self
+            .keys
+            .read()
+            .await
+            .get(&kid)
+            .cloned()
+            .ok_or_else(unauthorized)?;
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.set_audience(&[&self.client_id]);
+        validation.set_issuer(&[&metadata.issuer]);
+        validation.set_required_spec_claims(&["aud", "exp", "iss", "nbf", "oid", "tid"]);
+        validation.validate_nbf = true;
+        validation.leeway = 60;
+        let claims = decode::<EntraClaims>(token, &key, &validation)
+            .map_err(|_| unauthorized())?
+            .claims;
+        if claims.tid != self.tenant_id
+            || claims.aud != self.client_id
+            || claims.iss != metadata.issuer
+            || claims.oid.trim().is_empty()
+            || claims.exp == 0
+            || claims.nbf.is_none()
+        {
+            return Err(unauthorized());
+        }
+        Ok(claims.oid)
+    }
+}
+
+fn unauthorized() -> ApiError {
+    ApiError(
+        StatusCode::UNAUTHORIZED,
+        "Sign in with the circle owner’s Microsoft account to continue.".into(),
+    )
+}
 
 fn now() -> i64 {
     SystemTime::now()
@@ -104,38 +274,34 @@ fn detected_image_mime(bytes: &[u8]) -> Option<&'static str> {
     image::load_from_memory_with_format(bytes, format).ok()?;
     Some(mime)
 }
-fn cookie(headers: &HeaderMap, key: &str) -> Option<String> {
+fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers
-        .get(header::COOKIE)?
+        .get(header::AUTHORIZATION)?
         .to_str()
         .ok()?
-        .split(';')
-        .find_map(|v| {
-            let (k, val) = v.trim().split_once('=')?;
-            (k == key).then(|| val.to_string())
-        })
+        .strip_prefix("Bearer ")
+        .filter(|token| !token.is_empty())
 }
-async fn require_auth(state: &Shared, headers: &HeaderMap) -> ApiResult<()> {
-    let token = cookie(headers, "mcb_session").ok_or(ApiError(
-        StatusCode::UNAUTHORIZED,
-        "Sign in to continue.".into(),
-    ))?;
-    let digest = hex::encode(Sha256::digest(token.as_bytes()));
-    let found: Option<i64> = sqlx::query_scalar(
-        "SELECT expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>?",
-    )
-    .bind(digest)
-    .bind(now())
-    .fetch_optional(&state.db)
-    .await
-    .map_err(db_err)?;
-    if found.is_none() {
+async fn identity(state: &Shared, headers: &HeaderMap) -> ApiResult<String> {
+    state
+        .auth
+        .validate(bearer(headers).ok_or_else(unauthorized)?)
+        .await
+}
+async fn require_auth(state: &Shared, headers: &HeaderMap) -> ApiResult<String> {
+    let oid = identity(state, headers).await?;
+    let owner_oid: Option<String> =
+        sqlx::query_scalar("SELECT owner_oid FROM settings WHERE id=1 AND owner_oid<>''")
+            .fetch_optional(&state.db)
+            .await
+            .map_err(db_err)?;
+    if owner_oid.as_deref() != Some(&oid) {
         return Err(ApiError(
-            StatusCode::UNAUTHORIZED,
-            "Your session expired. Sign in again.".into(),
+            StatusCode::FORBIDDEN,
+            "This Microsoft account does not own this private circle.".into(),
         ));
     }
-    Ok(())
+    Ok(oid)
 }
 fn db_err(e: sqlx::Error) -> ApiError {
     tracing::error!(error=%e,"database error");
@@ -148,18 +314,13 @@ fn db_err(e: sqlx::Error) -> ApiError {
 #[derive(Deserialize)]
 struct SetupInput {
     facilitator: String,
-    passphrase: String,
     group_name: String,
     owner_code: String,
     adult_confirmed: bool,
 }
-#[derive(Deserialize)]
-struct LoginInput {
-    passphrase: String,
-}
 
 async fn status(State(s): State<Shared>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    let configured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings")
+    let configured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings WHERE owner_oid<>''")
         .fetch_one(&s.db)
         .await
         .map_err(db_err)?;
@@ -168,26 +329,39 @@ async fn status(State(s): State<Shared>, headers: HeaderMap) -> ApiResult<Json<V
             .fetch_optional(&s.db)
             .await
             .map_err(db_err)?;
-    let authenticated = require_auth(&s, &headers).await.is_ok();
+    let oid = match bearer(&headers) {
+        Some(_) => Some(identity(&s, &headers).await?),
+        None => None,
+    };
+    let signed_in = oid.is_some();
+    let owner_oid: Option<String> =
+        sqlx::query_scalar("SELECT owner_oid FROM settings WHERE id=1 AND owner_oid<>''")
+            .fetch_optional(&s.db)
+            .await
+            .map_err(db_err)?;
+    let authenticated = oid
+        .as_deref()
+        .is_some_and(|id| owner_oid.as_deref() == Some(id));
     Ok(Json(
-        json!({"configured":configured>0,"authenticated":authenticated,"facilitator":facilitator}),
+        json!({"configured":configured>0,"signed_in":signed_in,"authenticated":authenticated,"facilitator":facilitator}),
     ))
 }
 async fn setup(
     State(s): State<Shared>,
+    headers: HeaderMap,
     Json(input): Json<SetupInput>,
 ) -> ApiResult<impl IntoResponse> {
+    let owner_oid = identity(&s, &headers).await?;
     if !valid_label(&input.facilitator, 80)
         || !valid_label(&input.group_name, 100)
-        || input.passphrase.chars().count() < 8
         || !input.adult_confirmed
     {
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
-            "Use a facilitator name, group name, an adult confirmation, and a passphrase of at least 8 characters.".into(),
+            "Use a facilitator name, group name, and the adult responsibility confirmation.".into(),
         ));
     }
-    let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings")
+    let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings WHERE owner_oid<>''")
         .fetch_one(&s.db)
         .await
         .map_err(db_err)?;
@@ -210,80 +384,14 @@ async fn setup(
             "That adult setup code did not match this deployment. Ask the deployment operator for the code.".into(),
         ));
     }
-    let salt = random_hex(16);
-    let hash = password_hash(&input.passphrase, &salt);
     let mut tx = s.db.begin().await.map_err(db_err)?;
-    sqlx::query("INSERT INTO settings(id,facilitator,group_name,pass_salt,pass_hash,created_at) VALUES(1,?,?,?,?,?)")
-        .bind(input.facilitator.trim()).bind(input.group_name.trim()).bind(salt).bind(hash).bind(now()).execute(&mut *tx).await.map_err(db_err)?;
+    sqlx::query("INSERT INTO settings(id,facilitator,group_name,owner_oid,created_at) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET facilitator=excluded.facilitator,group_name=excluded.group_name,owner_oid=excluded.owner_oid")
+        .bind(input.facilitator.trim()).bind(input.group_name.trim()).bind(owner_oid).bind(now()).execute(&mut *tx).await.map_err(db_err)?;
     tx.commit().await.map_err(db_err)?;
     if let Some(path) = &s.owner_invite_path {
         let _ = tokio::fs::remove_file(path).await;
     }
-    create_session(&s.db).await
-}
-async fn login(
-    State(s): State<Shared>,
-    Json(input): Json<LoginInput>,
-) -> ApiResult<impl IntoResponse> {
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT pass_salt,pass_hash FROM settings LIMIT 1")
-            .fetch_optional(&s.db)
-            .await
-            .map_err(db_err)?;
-    let Some((salt, expected)) = row else {
-        return Err(ApiError(
-            StatusCode::BAD_REQUEST,
-            "Set up this board first.".into(),
-        ));
-    };
-    if password_hash(&input.passphrase, &salt) != expected {
-        return Err(ApiError(
-            StatusCode::UNAUTHORIZED,
-            "That passphrase did not match.".into(),
-        ));
-    }
-    create_session(&s.db).await
-}
-async fn create_session(db: &SqlitePool) -> ApiResult<impl IntoResponse> {
-    let token = random_hex(32);
-    let digest = hex::encode(Sha256::digest(token.as_bytes()));
-    sqlx::query("DELETE FROM auth_sessions WHERE expires_at<=?")
-        .bind(now())
-        .execute(db)
-        .await
-        .map_err(db_err)?;
-    sqlx::query("INSERT INTO auth_sessions(token_hash,expires_at) VALUES(?,?)")
-        .bind(digest)
-        .bind(now() + 60 * 60 * 24 * 30)
-        .execute(db)
-        .await
-        .map_err(db_err)?;
-    let mut h = HeaderMap::new();
-    h.insert(
-        header::SET_COOKIE,
-        HeaderValue::from_str(&format!(
-            "mcb_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000"
-        ))
-        .unwrap(),
-    );
-    Ok((h, Json(json!({"ok":true}))))
-}
-async fn logout(State(s): State<Shared>, headers: HeaderMap) -> ApiResult<impl IntoResponse> {
-    if let Some(token) = cookie(&headers, "mcb_session") {
-        let digest = hex::encode(Sha256::digest(token.as_bytes()));
-        let _ = sqlx::query("DELETE FROM auth_sessions WHERE token_hash=?")
-            .bind(digest)
-            .execute(&s.db)
-            .await;
-    }
-    let mut h = HeaderMap::new();
-    h.insert(
-        header::SET_COOKIE,
-        HeaderValue::from_static(
-            "mcb_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
-        ),
-    );
-    Ok((h, Json(json!({"ok":true}))))
+    Ok(Json(json!({"ok":true})))
 }
 
 #[derive(Serialize, FromRow)]
@@ -713,9 +821,27 @@ async fn health() -> Json<Value> {
 }
 async fn migrate(db: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query("PRAGMA foreign_keys=ON").execute(db).await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),facilitator TEXT NOT NULL,group_name TEXT NOT NULL,owner_oid TEXT NOT NULL,created_at INTEGER NOT NULL)").execute(db).await?;
+    let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as("PRAGMA table_info(settings)")
+            .fetch_all(db)
+            .await?;
+    if !columns.iter().any(|column| column.1 == "owner_oid") {
+        let mut tx = db.begin().await?;
+        sqlx::query("ALTER TABLE settings RENAME TO settings_legacy")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("CREATE TABLE settings(id INTEGER PRIMARY KEY CHECK(id=1),facilitator TEXT NOT NULL,group_name TEXT NOT NULL,owner_oid TEXT NOT NULL,created_at INTEGER NOT NULL)").execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO settings(id,facilitator,group_name,owner_oid,created_at) SELECT id,facilitator,group_name,'',created_at FROM settings_legacy").execute(&mut *tx).await?;
+        sqlx::query("DROP TABLE settings_legacy")
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+    }
+    sqlx::query("DROP TABLE IF EXISTS auth_sessions")
+        .execute(db)
+        .await?;
     for statement in [
-        "CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),facilitator TEXT NOT NULL,group_name TEXT NOT NULL,pass_salt TEXT NOT NULL,pass_hash TEXT NOT NULL,created_at INTEGER NOT NULL)",
-        "CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,expires_at INTEGER NOT NULL)",
         "CREATE TABLE IF NOT EXISTS learners(id INTEGER PRIMARY KEY AUTOINCREMENT,alias TEXT NOT NULL COLLATE NOCASE UNIQUE,created_at INTEGER NOT NULL)",
         "CREATE TABLE IF NOT EXISTS circle_sessions(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,session_date TEXT NOT NULL,focus TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL)",
         "CREATE TABLE IF NOT EXISTS problems(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id INTEGER NOT NULL REFERENCES circle_sessions(id) ON DELETE CASCADE,position INTEGER NOT NULL,title TEXT NOT NULL,prompt TEXT NOT NULL)",
@@ -725,12 +851,32 @@ async fn migrate(db: &SqlitePool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 fn app(state: Shared, dist: PathBuf) -> Router {
-    let api = Router::new()
+    let mut general_builder = GovernorConfigBuilder::default();
+    let general_config = Arc::new(
+        general_builder
+            .per_millisecond(50)
+            .burst_size(40)
+            .key_extractor(SmartIpKeyExtractor)
+            .finish()
+            .expect("valid general API rate limit"),
+    );
+    let mut write_builder = GovernorConfigBuilder::default();
+    let write_config = Arc::new(
+        write_builder
+            .per_millisecond(250)
+            .burst_size(8)
+            .key_extractor(SmartIpKeyExtractor)
+            .finish()
+            .expect("valid write API rate limit"),
+    );
+    let read_api = Router::new()
         .route("/status", get(status))
-        .route("/setup", post(setup))
-        .route("/login", post(login))
-        .route("/logout", post(logout))
         .route("/board", get(board))
+        .route("/files/{id}", get(file))
+        .route("/export", get(export_data))
+        .route_layer(GovernorLayer::new(general_config).error_handler(rate_limit_response));
+    let write_api = Router::new()
+        .route("/setup", post(setup))
         .route("/learners", post(add_learner))
         .route("/learners/{id}", delete(delete_learner))
         .route("/sessions", post(add_session))
@@ -739,9 +885,9 @@ fn app(state: Shared, dist: PathBuf) -> Router {
         .route("/problems/{id}", delete(delete_problem))
         .route("/attempts", post(save_attempt))
         .route("/attempts/{id}/upload", post(upload))
-        .route("/files/{id}", get(file).delete(delete_file))
-        .route("/export", get(export_data))
-        .with_state(state);
+        .route("/files/{id}", delete(delete_file))
+        .route_layer(GovernorLayer::new(write_config).error_handler(rate_limit_response));
+    let api = read_api.merge(write_api).with_state(state);
     Router::new()
         .route("/health", get(health))
         .nest("/api", api)
@@ -769,13 +915,29 @@ fn app(state: Shared, dist: PathBuf) -> Router {
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static("default-src 'self'; img-src 'self' data:; connect-src 'self' https://api.sociobot.in; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://api.sociobot.in"),
+            HeaderValue::from_static("default-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://api.sociobot.in https://sociobotcustomers.ciamlogin.com; frame-src https://sociobotcustomers.ciamlogin.com; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://api.sociobot.in https://sociobotcustomers.ciamlogin.com"),
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::HeaderName::from_static("permissions-policy"),
             HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
         ))
         .layer(TraceLayer::new_for_http())
+}
+fn rate_limit_response(error: tower_governor::GovernorError) -> Response {
+    let wait = match error {
+        tower_governor::GovernorError::TooManyRequests { wait_time, .. } => wait_time.max(1),
+        _ => 1,
+    };
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(json!({"error":"Too many requests. Wait before trying again."})),
+    )
+        .into_response();
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from_str(&wait.to_string()).expect("valid Retry-After"),
+    );
+    response
 }
 async fn immutable_hashed_assets(
     request: axum::extract::Request,
@@ -830,7 +992,7 @@ async fn main() {
         .await
         .expect("open database");
     migrate(&db).await.expect("migrate database");
-    let configured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings")
+    let configured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings WHERE owner_oid<>''")
         .fetch_one(&db)
         .await
         .expect("read configuration");
@@ -844,20 +1006,33 @@ async fn main() {
     } else {
         (None, None, false)
     };
-    tracing::info!(port,data_dir=%data_dir.display(),owner_invite_supplied,"configuration ready; database path supplied or defaulted, owner invite generated or supplied, session tokens generated per sign-in");
+    let auth = AuthState::from_env();
+    match auth.refresh().await {
+        Ok(()) => {
+            tracing::info!(authority=%auth.discovery_url,"Microsoft Entra External ID discovery and signing keys loaded")
+        }
+        Err(error) => {
+            tracing::warn!(%error,authority=%auth.discovery_url,"Microsoft Entra External ID metadata will retry on first authenticated request")
+        }
+    }
+    tracing::info!(port,data_dir=%data_dir.display(),owner_invite_supplied,entra_tenant=%auth.tenant_id,entra_client=%auth.client_id,"configuration ready; database path supplied or defaulted, owner invite generated or supplied, Entra defaults supplied or overridden");
     let state = Arc::new(AppState {
         db,
         upload_dir: data_dir.join("uploads"),
         owner_invite_hash,
         owner_invite_path,
+        auth,
     });
     let listener = TcpListener::bind(("0.0.0.0", port)).await.expect("bind");
-    axum::serve(listener, app(state, dist))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await
-        .expect("serve");
+    axum::serve(
+        listener,
+        app(state, dist).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await
+    .expect("serve");
 }
 
 #[cfg(test)]
@@ -887,8 +1062,29 @@ mod tests {
             upload_dir: dir.join("uploads"),
             owner_invite_hash: Some(password_hash(invite, "mcb-owner-invite")),
             owner_invite_path: None,
+            auth: AuthState {
+                tenant_id: DEFAULT_TENANT_ID.into(),
+                client_id: DEFAULT_CLIENT_ID.into(),
+                discovery_url: "https://sociobotcustomers.ciamlogin.com/test".into(),
+                metadata: Arc::new(RwLock::new(None)),
+                keys: Arc::new(RwLock::new(HashMap::new())),
+                refreshed_at: Arc::new(RwLock::new(0)),
+                client: reqwest::Client::new(),
+                test_token: Some("integration-test-entra-token".into()),
+            },
         });
         (app(state.clone(), dir.clone()), state, dir)
+    }
+
+    fn api_request(method: &str, uri: &str, body: Body) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("x-forwarded-for", "198.51.100.7, 10.0.0.4")
+            .header(header::AUTHORIZATION, "Bearer integration-test-entra-token")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .unwrap()
     }
 
     #[tokio::test]
@@ -922,6 +1118,80 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn reads_are_limited_by_first_forwarded_ip_with_retry_after() {
+        let (router, _, _) = test_app("adult-setup-code-0123456789").await;
+        let mut requests = tokio::task::JoinSet::new();
+        for _ in 0..120 {
+            let service = router.clone();
+            requests.spawn(async move {
+                service
+                    .oneshot(
+                        Request::builder()
+                            .uri("/api/status")
+                            .header("x-forwarded-for", "203.0.113.9, 10.0.0.8")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+            });
+        }
+        let mut ok = 0;
+        let mut limited = 0;
+        while let Some(result) = requests.join_next().await {
+            let response = result.unwrap();
+            match response.status() {
+                StatusCode::OK => ok += 1,
+                StatusCode::TOO_MANY_REQUESTS => {
+                    limited += 1;
+                    assert_eq!(response.headers().get(header::RETRY_AFTER).unwrap(), "1");
+                }
+                status => panic!("unexpected burst status {status}"),
+            }
+        }
+        assert!(ok >= 1);
+        assert!(limited >= 1);
+        let other_client = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/status")
+                    .header("x-forwarded-for", "203.0.113.10, 203.0.113.9")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(other_client.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn writes_have_a_stricter_limit_and_retry_after() {
+        let (router, _, _) = test_app("adult-setup-code-0123456789").await;
+        let mut limited = None;
+        for _ in 0..12 {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/setup")
+                        .header("x-forwarded-for", "192.0.2.44, 10.0.0.8")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from("{}"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                limited = Some(response);
+                break;
+            }
+        }
+        let limited = limited.expect("write burst should be limited");
+        assert_eq!(limited.headers().get(header::RETRY_AFTER).unwrap(), "1");
+    }
+
     #[test]
     fn dates_and_images_are_validated_from_real_values() {
         assert!(valid_iso_date("2028-02-29"));
@@ -935,56 +1205,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ownership_cookie_date_upload_and_asset_cache_regressions() {
+    async fn entra_ownership_date_upload_and_asset_cache_regressions() {
         let invite = "adult-setup-code-0123456789";
         let (router, state, _) = test_app(invite).await;
-        let wrong = router
+        let anonymous = router
             .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/api/setup")
+                    .header("x-forwarded-for", "198.51.100.7")
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"facilitator":"Morgan","group_name":"Saturday Circle","passphrase":"lantern-path-2026","owner_code":"not-the-code","adult_confirmed":true}"#))
+                    .body(Body::from(r#"{"facilitator":"Morgan","group_name":"Saturday Circle","owner_code":"adult-setup-code-0123456789","adult_confirmed":true}"#))
                     .unwrap(),
             )
+            .await
+            .unwrap();
+        assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            anonymous.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            "Bearer realm=\"math-circle-board\""
+        );
+        let wrong = router
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/setup",
+                Body::from(r#"{"facilitator":"Morgan","group_name":"Saturday Circle","owner_code":"not-the-code","adult_confirmed":true}"#),
+            ))
             .await
             .unwrap();
         assert_eq!(wrong.status(), StatusCode::FORBIDDEN);
 
         let setup = router
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/setup")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(format!(r#"{{"facilitator":"Morgan","group_name":"Saturday Circle","passphrase":"lantern-path-2026","owner_code":"{invite}","adult_confirmed":true}}"#)))
-                    .unwrap(),
-            )
+            .oneshot(api_request(
+                "POST",
+                "/api/setup",
+                Body::from(format!(r#"{{"facilitator":"Morgan","group_name":"Saturday Circle","owner_code":"{invite}","adult_confirmed":true}}"#)),
+            ))
             .await
             .unwrap();
         assert_eq!(setup.status(), StatusCode::OK);
-        let set_cookie = setup
-            .headers()
-            .get(header::SET_COOKIE)
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(set_cookie.contains("HttpOnly; Secure; SameSite=Strict"));
-        let session_cookie = set_cookie.split(';').next().unwrap();
+        assert!(setup.headers().get(header::SET_COOKIE).is_none());
 
         let invalid_date = router
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/sessions")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::COOKIE, session_cookie)
-                    .body(Body::from(r#"{"title":"Impossible date","session_date":"2026-99-99","focus":"Boundary"}"#))
-                    .unwrap(),
-            )
+            .oneshot(api_request(
+                "POST",
+                "/api/sessions",
+                Body::from(
+                    r#"{"title":"Impossible date","session_date":"2026-99-99","focus":"Boundary"}"#,
+                ),
+            ))
             .await
             .unwrap();
         assert_eq!(invalid_date.status(), StatusCode::BAD_REQUEST);
@@ -998,15 +1271,15 @@ mod tests {
         );
         let forged = router
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/attempts/1/upload")
-                    .header(header::CONTENT_TYPE, "multipart/form-data; boundary=mcb")
-                    .header(header::COOKIE, session_cookie)
-                    .body(Body::from(forged_upload))
-                    .unwrap(),
-            )
+            .oneshot({
+                let mut request =
+                    api_request("POST", "/api/attempts/1/upload", Body::from(forged_upload));
+                request.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("multipart/form-data; boundary=mcb"),
+                );
+                request
+            })
             .await
             .unwrap();
         assert_eq!(forged.status(), StatusCode::BAD_REQUEST);

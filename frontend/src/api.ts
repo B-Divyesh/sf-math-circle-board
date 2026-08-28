@@ -1,7 +1,18 @@
+import {identityToken} from './auth';
+
 export class ApiFailure extends Error{constructor(message:string,public status:number){super(message)}}
-export async function api<T>(path:string,options:RequestInit={}):Promise<T>{
-  const response=await fetch(`/api${path}`,{...options,headers:{...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),...options.headers}});
-  if(!response.ok){let message='The board could not complete that request.';try{message=(await response.json()).error||message}catch{}throw new ApiFailure(message,response.status)}
-  return response.json() as Promise<T>;
+
+async function response(path:string,options:RequestInit={}):Promise<Response>{
+  const token=await identityToken();
+  const headers=new Headers(options.headers);
+  if(!(options.body instanceof FormData))headers.set('Content-Type','application/json');
+  if(token)headers.set('Authorization',`Bearer ${token}`);
+  const result=await fetch(`/api${path}`,{...options,headers});
+  if(!result.ok){let message='The board could not complete that request.';try{message=(await result.clone().json()).error||message}catch{}throw new ApiFailure(message,result.status)}
+  return result;
 }
+export async function api<T>(path:string,options:RequestInit={}):Promise<T>{
+  return (await response(path,options)).json() as Promise<T>;
+}
+export async function apiBlob(path:string):Promise<Blob>{return (await response(path)).blob()}
 export const send=<T>(path:string,data:unknown,method='POST')=>api<T>(path,{method,body:JSON.stringify(data)});

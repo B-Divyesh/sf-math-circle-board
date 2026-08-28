@@ -4,7 +4,7 @@ export type Problem={id:number;session_id:number;position:number;title:string;pr
 export type Attempt={id:number;learner_id:number;problem_id:number;status:'not_started'|'exploring'|'shared';thinking:string;strategies:string;private_note:string;updated_at:number};
 export type Attachment={id:number;attempt_id:number;original_name:string;mime:string;created_at:number};
 export type Board={group_name:string;learners:Learner[];sessions:CircleSession[];problems:Problem[];attempts:Attempt[];attachments:Attachment[]};
-export type Status={configured:boolean;authenticated:boolean;facilitator?:string};
+export type Status={configured:boolean;signed_in:boolean;authenticated:boolean;facilitator?:string};
 
 export const parseStrategies=(raw:string):string[]=>{try{const value=JSON.parse(raw);return Array.isArray(value)?value.filter(v=>typeof v==='string'):[]}catch{return[]}};
 export const statusLabel=(status:Attempt['status'])=>status==='shared'?'✓ Shared':status==='exploring'?'◐ Exploring':'○ Not started';

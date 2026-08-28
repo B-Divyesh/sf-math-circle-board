@@ -15,6 +15,7 @@ The product opens with one panoramic original image of a lamplit mathematics tab
 - `ink` #16232B — primary text on paper (contrast > 13:1).
 - `mist` #AFC2C8 — secondary text on night (contrast > 7:1).
 - `ember` #D36B3F — primary action and active trail; white is not used on it because dark ink gives stronger contrast.
+- `ember-ink` #8A3C23 — the ember hue darkened for small text on paper (WCAG AA), preserving ember’s role without sacrificing legibility.
 - `lantern` #F3C969 — attention and selected states, always paired with text/icon.
 - `moss` #39705A — success/completed, paired with a check or label.
 - `danger` #A53E42 — destructive state; on paper with explicit warning text.

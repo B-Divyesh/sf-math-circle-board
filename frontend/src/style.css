@@ -12,3 +12,5 @@
 @media print{body{background:white}.topbar,.app-footer,.no-print,.offline,.notice{display:none!important}.shell{padding:0;background:white}.workspace{padding:0}.recap{box-shadow:none;max-width:none;padding:8mm;font-size:10pt}.recap-title h2{font-size:24pt}.recap-summary span{font-size:18pt}.learner-recap{grid-template-columns:32mm 1fr;padding:3mm 0}.learner-recap li+li{margin-top:2mm}.recap-footer{margin-top:4mm}@page{size:A4;margin:8mm}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 .gate-art picture{display:block}
+.identity-note{grid-column:1/-1;margin:0;color:var(--moss);font-weight:700}.identity-gate{display:grid;grid-template-columns:1fr}.identity-gate p,.identity-gate small{margin:0}
+:root{--ember-ink:#8a3c23}.problem-number,.page-section .eyebrow,.workbench .eyebrow,.recap .eyebrow{color:var(--ember-ink)}

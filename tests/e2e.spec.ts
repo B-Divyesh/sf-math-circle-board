@@ -3,11 +3,32 @@ import AxeBuilder from '@axe-core/playwright';
 
 test.describe.configure({mode:'serial'});
 const ownerCode=process.env.MCB_TEST_OWNER_CODE||'adult-setup-code-0123456789';
+const authToken=process.env.MCB_TEST_AUTH_TOKEN||'integration-test-entra-token';
+const authenticate=async(page:import('@playwright/test').Page)=>page.addInitScript(token=>sessionStorage.setItem('mcb:test-access-token',token),authToken);
+
+test('public gate uses only Sociobot Microsoft identity',async({page})=>{
+  const consoleErrors:string[]=[];
+  const origins=new Set<string>();
+  page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text())});
+  page.on('pageerror',error=>consoleErrors.push(error.message));
+  page.on('request',request=>origins.add(new URL(request.url()).origin));
+  await page.goto('/');
+  await page.keyboard.press('Tab');
+  await expect(page.locator(':focus')).toHaveText('Skip to main content');
+  await expect(page.getByRole('button',{name:'Sign in with Microsoft'})).toBeVisible();
+  await expect(page.getByText(/sociobotcustomers\.ciamlogin\.com/)).toBeVisible();
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
+  const results=await new AxeBuilder({page}).analyze();
+  expect(results.violations.filter(v=>['serious','critical'].includes(v.impact||''))).toEqual([]);
+  expect([...origins]).toEqual([new URL(page.url()).origin]);
+  expect(consoleErrors).toEqual([]);
+});
 
 test('facilitator completes a session record and recap',async({page})=>{
   const consoleErrors:string[]=[];
   page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text())});
   page.on('pageerror',error=>consoleErrors.push(error.message));
+  await authenticate(page);
   await page.goto('/');
   await page.keyboard.press('Tab');
   await expect(page.locator(':focus')).toHaveText('Skip to main content');
@@ -17,7 +38,6 @@ test('facilitator completes a session record and recap',async({page})=>{
   await page.getByLabel('Circle name').fill('Saturday Circle');
   await page.getByLabel('Adult setup code').fill(ownerCode);
   await page.getByLabel(/I confirm that I am an adult/).check();
-  await page.getByLabel('Create a passphrase').fill('lantern-path-2026');
   await page.getByRole('button',{name:'Create private board'}).click();
   await expect(page.getByText('Plan the first gathering')).toBeVisible();
   await page.getByRole('button',{name:'New session'}).click();
@@ -41,7 +61,7 @@ test('facilitator completes a session record and recap',async({page})=>{
   await expect(page.getByText('Attempt saved.')).toBeVisible();
   await page.getByLabel('Add photo').setInputFiles('frontend/public/art/lantern-room-768.webp');
   await expect(page.getByRole('img',{name:/Uploaded attempt/})).toBeVisible();
-  const exported=await page.evaluate(async()=>{const response=await fetch('/api/export');return{ok:response.ok,data:await response.json()}});
+  const exported=await page.evaluate(async token=>{const response=await fetch('/api/export',{headers:{Authorization:`Bearer ${token}`}});return{ok:response.ok,data:await response.json()}},authToken);
   expect(exported.ok).toBeTruthy();
   expect(exported.data.attachment_files).toHaveLength(1);
   await page.getByRole('button',{name:'Print recap'}).click();
@@ -52,26 +72,29 @@ test('facilitator completes a session record and recap',async({page})=>{
 });
 
 test('legal pages and mobile sign-in remain usable',async({browser})=>{
-  const page=await browser.newPage({viewport:{width:390,height:844}});
+  const context=await browser.newContext({viewport:{width:390,height:844}});
+  const page=await context.newPage();
+  await authenticate(page);
   await page.goto('/privacy');
   await expect(page.getByRole('heading',{level:1})).toHaveText('A small record, kept private.');
   await page.goto('/');
-  await expect(page.getByLabel('Passphrase')).toBeVisible();
-  await page.getByLabel('Passphrase').fill('lantern-path-2026');
-  await page.getByRole('button',{name:'Open private board'}).click();
   await expect(page.getByRole('link',{name:'Learners'})).toBeVisible();
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
   await expect(page.locator('body')).toHaveJSProperty('scrollWidth',390);
+  const results=await new AxeBuilder({page}).analyze();
+  expect(results.violations.filter(v=>['serious','critical'].includes(v.impact||''))).toEqual([]);
+  await context.close();
 });
 
 test('an authenticated offline mobile reload restores the cached board and drafts',async({browser})=>{
   const context=await browser.newContext({viewport:{width:390,height:844}});
   const page=await context.newPage();
+  await authenticate(page);
   await page.goto('/');
-  await page.getByLabel('Passphrase').fill('lantern-path-2026');
-  await page.getByRole('button',{name:'Open private board'}).click();
   await expect(page.getByRole('link',{name:'Learners'})).toBeVisible();
+  await page.evaluate(()=>navigator.serviceWorker.ready.then(()=>true));
   await page.reload();
-  await page.waitForFunction(()=>navigator.serviceWorker.controller!==null);
+  await expect.poll(()=>page.evaluate(()=>navigator.serviceWorker.controller!==null)).toBe(true);
   await context.setOffline(true);
   await page.reload();
   await expect(page.getByRole('heading',{level:1})).toHaveText('Saturday Circle facilitator board');
