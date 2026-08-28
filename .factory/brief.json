@@ -1,0 +1,9 @@
+{
+  "slug": "math-circle-board",
+  "title": "Math Circle Board",
+  "artifact_class": "web-with-backend",
+  "job": "Help a volunteer facilitator sequence open-ended problems, see partial attempts, preserve private strategy notes, and print a one-page session recap for a tiny math circle.",
+  "audience": "Adult facilitators of private groups of 6–12 learners",
+  "privacy": "Adult-owned, minimal learner PII, private uploads, export and deletion controls",
+  "monetization": "Freemium; one-time Circle Plus license through Sociobot billing"
+}
