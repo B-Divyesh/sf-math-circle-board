@@ -32,10 +32,10 @@ Verification completed on 2026-08-28:
 - Playwright 1.58.2: 2 end-to-end tests passed, covering setup through recap, private image upload, complete data export, 390 px sign-in, and legal pages.
 - Axe in the authenticated recap: zero serious or critical violations.
 - `npm run build`: passed; output is exactly `dist/` with `index.html` at its root.
-- Production transfer sizes: JS 27.32 KB raw / 9.60 KB gzip; CSS 19.86 KB raw / 5.20 KB gzip; mobile hero 22 KB WebP; desktop hero 63 KB WebP.
+- Production transfer sizes: JS 27.33 KB raw / 9.60 KB gzip; CSS 19.86 KB raw / 5.20 KB gzip; mobile hero 22 KB WebP; desktop hero 63 KB WebP.
 - Lighthouse mobile: Performance 100, Accessibility 100, Best Practices 100, SEO 100; LCP 1.7 s, CLS 0, TBT 0 ms.
 - Load smoke: 100 concurrent-batch `/health` requests completed successfully in 440 ms locally.
-- Runtime start was verified with only `PORT`, `DATA_DIR`, and `DIST_DIR`; the service itself requires no value beyond optional `PORT` and defaults both directories.
+- Runtime start was verified with only `PORT`; both the database/upload location and frontend directory correctly used their defaults.
 
 ## Known gaps / next steps
 
