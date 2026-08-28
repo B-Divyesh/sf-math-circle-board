@@ -1,0 +1,20 @@
+{
+  "name": "math-circle-board",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "test": "vitest run && cargo test",
+    "test:e2e": "playwright test",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "1.58.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}

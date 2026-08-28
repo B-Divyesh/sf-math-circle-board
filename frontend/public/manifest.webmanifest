@@ -1,0 +1,10 @@
+{
+  "name":"Math Circle Board",
+  "short_name":"Circle Board",
+  "description":"A private facilitator board for exploratory math circles.",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#101d2a",
+  "theme_color":"#101d2a",
+  "icons":[{"src":"/mark.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]
+}
