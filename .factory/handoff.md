@@ -72,6 +72,20 @@ Results:
   `OPTIONS /api/login` returned `405` with no CORS grant.
 - 100 concurrent local `/health` requests completed successfully.
 
+## Live deployment verification
+
+The container deployment completed at
+`https://math-circle-board.sociobot.in` from repair commit
+`f6a675b4bb368a205a3d955484526a4619366d91`.
+
+- Live `/health` returns that exact build SHA.
+- Live `/api/status` remains unconfigured and discloses no owner code.
+- A live setup attempt with a wrong code returned `403`; the board remained
+  unclaimed.
+- Live hashed JavaScript returns `Cache-Control: public, max-age=31536000,
+  immutable`; live HSTS and CSP are present; untrusted-origin preflight remains
+  `405` without a CORS grant.
+
 ## Run and deployment
 
 ```sh
