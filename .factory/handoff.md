@@ -78,6 +78,8 @@ npm run test:claims -- --grep @claim:plus-price
 npm run test:claims -- --grep @claim:full-delete
 ```
 
+The final clean clone was `/tmp/mcb-clean-cC8QTi` at deployed code commit `e736a44031a8f31507123f56e7625a90ba300e56`. It ran `npm ci`, `npm run build`, `npm test`, and every command above independently. The clean install reported 60 packages and zero vulnerabilities.
+
 Additional local evidence:
 
 - `verify-url.sh http://127.0.0.1:18082/ <temp-dir>`: HTTP 200; title and `lang=en`; one h1; main present; zero missing alt attributes; zero unnamed buttons; zero console errors.
@@ -86,6 +88,16 @@ Additional local evidence:
 - `/privacy`, `/terms`, `/demo`, `/robots.txt`, and `/sitemap.xml` each returned HTTP 200 locally. An unknown path returned 404 with the designed page.
 - Secret-pattern scan found no embedded keys or private-key material.
 - Focused Rust regressions hold a dot-file lock across two pools, close the first pool to model revision shutdown, and prove a fresh connection recovers; another migrates a populated legacy schema without losing its row. The crash-residue test removes a zero-byte database plus journal and proves non-empty files remain untouched.
+
+## Live deployment evidence
+
+- ACR run `ch1mv` built `sf-math-circle-board:e736a44031a8`; Container Apps revision `sf-math-circle-board--0000009` became healthy with one replica and 100% traffic.
+- `GET https://math-circle-board.sociobot.in/health` returned `{"build":"e736a44031a8f31507123f56e7625a90ba300e56","ok":true}`.
+- `/`, `/privacy`, `/terms`, `/demo`, `/robots.txt`, and `/sitemap.xml` returned HTTP 200; an unknown route returned the intended 404.
+- `verify-url.sh https://math-circle-board.sociobot.in /tmp/math-circle-board-live-verify`: HTTP 200, title present, `lang=en`, one h1, main present, no missing alt text, no unnamed buttons, and no console errors.
+- Live Playwright: 10/10 non-destructive landing/demo/offline/privacy/accessibility/mobile/keyboard/route claims passed; the rate-limit claim then passed separately with `429` plus `Retry-After`. Full deletion passed only against disposable local data and was intentionally not run against production.
+- Live Lighthouse mobile: Performance 100, Accessibility 100, Best Practices 100, SEO 100; LCP 1.4 s; CLS 0; TBT 40 ms.
+- The first rollout attempts revealed a zero-byte `board.db` and 512-byte hot journal created by unsupported SMB locking. Only those provably empty/incomplete product-scoped files were removed. Revision `0000009` then initialized the database and became healthy; no non-empty user database was deleted.
 
 ## Deployment configuration
 
