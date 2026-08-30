@@ -27,7 +27,7 @@ The failed candidate had no `.factory/claims.json`, `.factory/demo.md`, or selec
 - Added canonical, Open Graph, Twitter, favicon/apple-touch metadata, a 1200×630 social card, `robots.txt`, and `sitemap.xml`.
 - Added confirmed full-board deletion. It removes all database rows and uploaded files, then creates a new mode-0600 adult setup code.
 - Changed the builder image from forbidden `rust:1.89-alpine` to `rust:1-alpine`.
-- Added a 30-second SQLite busy timeout and bounded migration retries. The first repair deployment exposed a rollout overlap where the old revision held the mounted database and the new revision exited on `database is locked`.
+- Added a read-only current-schema check, a 30-second SQLite busy timeout, and bounded migration retries. The first repair deployment exposed a rollout overlap where the old revision held the mounted database and the new revision exited on `database is locked`; current databases now skip unnecessary DDL during that overlap.
 - Updated the service-worker cache to `mcb-shell-v4` and made navigation fallback reliable for offline deep-link reloads.
 
 ## Exact verification evidence

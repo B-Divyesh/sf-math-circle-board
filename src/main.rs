@@ -900,7 +900,25 @@ async fn migrate(db: &SqlitePool) -> Result<(), sqlx::Error> {
     ] {sqlx::query(statement).execute(db).await?;}
     Ok(())
 }
+async fn schema_is_current(db: &SqlitePool) -> Result<bool, sqlx::Error> {
+    let tables: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('settings','learners','circle_sessions','problems','attempts','attachments')",
+    )
+    .fetch_one(db)
+    .await?;
+    if tables != 6 {
+        return Ok(false);
+    }
+    let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as("PRAGMA table_info(settings)")
+            .fetch_all(db)
+            .await?;
+    Ok(columns.iter().any(|column| column.1 == "owner_oid"))
+}
 async fn migrate_with_retry(db: &SqlitePool) -> Result<(), sqlx::Error> {
+    if schema_is_current(db).await? {
+        return Ok(());
+    }
     for attempt in 1..=12 {
         match migrate(db).await {
             Ok(()) => return Ok(()),
@@ -1473,9 +1491,12 @@ mod tests {
             )
             .await
             .unwrap();
-        migrate(&first).await.unwrap();
+        sqlx::query("CREATE TABLE lock_holder(id INTEGER PRIMARY KEY)")
+            .execute(&first)
+            .await
+            .unwrap();
         let mut lock = first.begin().await.unwrap();
-        sqlx::query("INSERT INTO learners(alias,created_at) VALUES('Lock holder',0)")
+        sqlx::query("INSERT INTO lock_holder(id) VALUES(1)")
             .execute(&mut *lock)
             .await
             .unwrap();
