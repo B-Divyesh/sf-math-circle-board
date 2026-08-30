@@ -27,7 +27,7 @@ The failed candidate had no `.factory/claims.json`, `.factory/demo.md`, or selec
 - Added canonical, Open Graph, Twitter, favicon/apple-touch metadata, a 1200×630 social card, `robots.txt`, and `sitemap.xml`.
 - Added confirmed full-board deletion. It removes all database rows and uploaded files, then creates a new mode-0600 adult setup code.
 - Changed the builder image from forbidden `rust:1.89-alpine` to `rust:1-alpine`.
-- Added a read-only current-schema check, a 30-second SQLite busy timeout, and bounded migration retries. The first repair deployment exposed a rollout overlap where the old revision held the mounted database and the new revision exited on `database is locked`; current databases now skip unnecessary DDL during that overlap.
+- Added a read-only current-schema check, a single-connection SQLite pool, a 30-second busy timeout, and bounded migration retries. The first repair deployment exposed a rollout overlap where the old revision held the mounted database and the new revision exited on `database is locked`; current databases skip unnecessary DDL, while legacy databases use one additive schema change.
 - Updated the service-worker cache to `mcb-shell-v4` and made navigation fallback reliable for offline deep-link reloads.
 
 ## Exact verification evidence
@@ -39,7 +39,7 @@ npm ci
 PASS — 60 packages installed; 0 vulnerabilities
 
 npm test
-PASS — TypeScript; Vitest 3/3; Rust 9/9
+PASS — TypeScript; Vitest 3/3; Rust 10/10
 
 cargo fmt --all -- --check
 PASS
@@ -85,7 +85,7 @@ Additional local evidence:
 - Release binary started in a fresh directory with only `PORT` and process `PATH`. It created `./data/board.db` and a mode-0600 owner invite, then returned `{"build":"repair-local","ok":true}`.
 - `/privacy`, `/terms`, `/demo`, `/robots.txt`, and `/sitemap.xml` each returned HTTP 200 locally. An unknown path returned 404 with the designed page.
 - Secret-pattern scan found no embedded keys or private-key material.
-- A focused Rust regression holds a write transaction from one pool, starts migration through another, releases the lock, and proves startup recovery succeeds.
+- Focused Rust regressions hold a write transaction across two pools to prove retry recovery, and migrate a populated legacy schema through one connection without losing its row.
 
 ## Deployment configuration
 

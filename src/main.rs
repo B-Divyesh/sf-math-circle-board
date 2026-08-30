@@ -877,16 +877,9 @@ async fn migrate(db: &SqlitePool) -> Result<(), sqlx::Error> {
             .fetch_all(db)
             .await?;
     if !columns.iter().any(|column| column.1 == "owner_oid") {
-        let mut tx = db.begin().await?;
-        sqlx::query("ALTER TABLE settings RENAME TO settings_legacy")
-            .execute(&mut *tx)
+        sqlx::query("ALTER TABLE settings ADD COLUMN owner_oid TEXT NOT NULL DEFAULT ''")
+            .execute(db)
             .await?;
-        sqlx::query("CREATE TABLE settings(id INTEGER PRIMARY KEY CHECK(id=1),facilitator TEXT NOT NULL,group_name TEXT NOT NULL,owner_oid TEXT NOT NULL,created_at INTEGER NOT NULL)").execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO settings(id,facilitator,group_name,owner_oid,created_at) SELECT id,facilitator,group_name,'',created_at FROM settings_legacy").execute(&mut *tx).await?;
-        sqlx::query("DROP TABLE settings_legacy")
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
     }
     sqlx::query("DROP TABLE IF EXISTS auth_sessions")
         .execute(db)
@@ -1082,7 +1075,10 @@ async fn main() {
         .create_if_missing(true)
         .busy_timeout(Duration::from_secs(30));
     let db = SqlitePoolOptions::new()
-        .max_connections(5)
+        // Azure Files implements SQLite locks at the file level. A single
+        // connection avoids this process contending with itself during DDL
+        // and matches the product's single-replica deployment contract.
+        .max_connections(1)
         .connect_with(options)
         .await
         .expect("open database");
@@ -1519,5 +1515,36 @@ mod tests {
             .unwrap()
             .expect("migration should succeed after lock release");
         let _ = tokio::fs::remove_dir_all(dir).await;
+    }
+
+    #[tokio::test]
+    async fn legacy_schema_migrates_with_a_single_connection() {
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE settings(id INTEGER PRIMARY KEY CHECK(id=1),facilitator TEXT NOT NULL,group_name TEXT NOT NULL,created_at INTEGER NOT NULL)")
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO settings VALUES(1,'Sam','Saturday circle',123)")
+            .execute(&db)
+            .await
+            .unwrap();
+
+        migrate_with_retry(&db).await.unwrap();
+
+        let saved: (String, String, String, i64) = sqlx::query_as(
+            "SELECT facilitator,group_name,owner_oid,created_at FROM settings WHERE id=1",
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(
+            saved,
+            ("Sam".into(), "Saturday circle".into(), "".into(), 123)
+        );
+        assert!(schema_is_current(&db).await.unwrap());
     }
 }
