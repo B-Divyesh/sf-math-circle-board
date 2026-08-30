@@ -908,21 +908,59 @@ async fn schema_is_current(db: &SqlitePool) -> Result<bool, sqlx::Error> {
             .await?;
     Ok(columns.iter().any(|column| column.1 == "owner_oid"))
 }
-async fn migrate_with_retry(db: &SqlitePool) -> Result<(), sqlx::Error> {
-    if schema_is_current(db).await? {
-        return Ok(());
-    }
-    for attempt in 1..=12 {
-        match migrate(db).await {
-            Ok(()) => return Ok(()),
-            Err(error) if error.to_string().contains("database is locked") && attempt < 12 => {
-                tracing::warn!(attempt, "SQLite is busy during rollout; retrying migration");
-                tokio::time::sleep(Duration::from_secs(2)).await;
+fn sqlite_is_locked(error: &sqlx::Error) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("database is locked") || message.contains("database is busy")
+}
+async fn open_database_with_retry(
+    path: PathBuf,
+    busy_timeout: Duration,
+    retry_delay: Duration,
+    attempts: usize,
+) -> Result<SqlitePool, sqlx::Error> {
+    for attempt in 1..=attempts {
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            // Azure Files is SMB-backed. The dot-file VFS preserves
+            // cross-process exclusion without POSIX byte-range locks.
+            .vfs("unix-dotfile")
+            .busy_timeout(busy_timeout);
+        let result = async {
+            let db = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options)
+                .await?;
+            if !schema_is_current(&db).await? {
+                migrate(&db).await?;
+            }
+            Ok::<_, sqlx::Error>(db)
+        }
+        .await;
+        match result {
+            Ok(db) => return Ok(db),
+            Err(error) if sqlite_is_locked(&error) && attempt < attempts => {
+                tracing::warn!(attempt, "SQLite is busy during rollout; reopening database");
+                tokio::time::sleep(retry_delay).await;
             }
             Err(error) => return Err(error),
         }
     }
     unreachable!()
+}
+async fn remove_empty_database_artifacts(path: &std::path::Path) -> std::io::Result<bool> {
+    let Ok(metadata) = tokio::fs::metadata(path).await else {
+        return Ok(false);
+    };
+    if metadata.len() != 0 {
+        return Ok(false);
+    }
+    let journal = PathBuf::from(format!("{}-journal", path.display()));
+    if tokio::fs::metadata(&journal).await.is_ok() {
+        tokio::fs::remove_file(&journal).await?;
+    }
+    tokio::fs::remove_file(path).await?;
+    Ok(true)
 }
 fn app(state: Shared, dist: PathBuf) -> Router {
     let mut general_builder = GovernorConfigBuilder::default();
@@ -1070,19 +1108,22 @@ async fn main() {
     tokio::fs::create_dir_all(data_dir.join("uploads"))
         .await
         .expect("create data directory");
-    let options = SqliteConnectOptions::new()
-        .filename(data_dir.join("board.db"))
-        .create_if_missing(true)
-        .busy_timeout(Duration::from_secs(30));
-    let db = SqlitePoolOptions::new()
-        // Azure Files implements SQLite locks at the file level. A single
-        // connection avoids this process contending with itself during DDL
-        // and matches the product's single-replica deployment contract.
-        .max_connections(1)
-        .connect_with(options)
+    let database_path = data_dir.join("board.db");
+    if remove_empty_database_artifacts(&database_path)
         .await
-        .expect("open database");
-    migrate_with_retry(&db).await.expect("migrate database");
+        .expect("clean incomplete empty database")
+    {
+        tracing::warn!(path=%database_path.display(), "removed incomplete zero-byte SQLite database");
+    }
+    tracing::info!(path=%database_path.display(), "opening SQLite database");
+    let db = open_database_with_retry(
+        database_path,
+        Duration::from_secs(2),
+        Duration::from_secs(1),
+        60,
+    )
+    .await
+    .expect("open database");
     let configured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings WHERE owner_oid<>''")
         .fetch_one(&db)
         .await
@@ -1483,6 +1524,7 @@ mod tests {
                 SqliteConnectOptions::new()
                     .filename(&path)
                     .create_if_missing(true)
+                    .vfs("unix-dotfile")
                     .busy_timeout(Duration::from_millis(50)),
             )
             .await
@@ -1496,24 +1538,26 @@ mod tests {
             .execute(&mut *lock)
             .await
             .unwrap();
-        let second = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(&path)
-                    .create_if_missing(true)
-                    .busy_timeout(Duration::from_millis(50)),
+        let retry_path = path.clone();
+        let retry = tokio::spawn(async move {
+            open_database_with_retry(
+                retry_path,
+                Duration::from_millis(50),
+                Duration::from_millis(50),
+                20,
             )
             .await
-            .unwrap();
-        let retry = tokio::spawn(async move { migrate_with_retry(&second).await });
+        });
         tokio::time::sleep(Duration::from_millis(200)).await;
         lock.rollback().await.unwrap();
+        first.close().await;
         tokio::time::timeout(Duration::from_secs(5), retry)
             .await
             .expect("migration retry should finish")
             .unwrap()
-            .expect("migration should succeed after lock release");
+            .expect("migration should succeed after lock release")
+            .close()
+            .await;
         let _ = tokio::fs::remove_dir_all(dir).await;
     }
 
@@ -1533,7 +1577,7 @@ mod tests {
             .await
             .unwrap();
 
-        migrate_with_retry(&db).await.unwrap();
+        migrate(&db).await.unwrap();
 
         let saved: (String, String, String, i64) = sqlx::query_as(
             "SELECT facilitator,group_name,owner_oid,created_at FROM settings WHERE id=1",
@@ -1546,5 +1590,25 @@ mod tests {
             ("Sam".into(), "Saturday circle".into(), "".into(), 123)
         );
         assert!(schema_is_current(&db).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn only_zero_byte_database_artifacts_are_removed() {
+        let dir = std::env::temp_dir().join(format!("mcb-empty-test-{}", random_hex(6)));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let path = dir.join("board.db");
+        let journal = dir.join("board.db-journal");
+        tokio::fs::write(&path, []).await.unwrap();
+        tokio::fs::write(&journal, [1, 2, 3]).await.unwrap();
+        assert!(remove_empty_database_artifacts(&path).await.unwrap());
+        assert!(!path.exists());
+        assert!(!journal.exists());
+
+        tokio::fs::write(&path, b"database data").await.unwrap();
+        tokio::fs::write(&journal, [1, 2, 3]).await.unwrap();
+        assert!(!remove_empty_database_artifacts(&path).await.unwrap());
+        assert!(path.exists());
+        assert!(journal.exists());
+        let _ = tokio::fs::remove_dir_all(dir).await;
     }
 }
