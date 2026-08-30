@@ -12,7 +12,10 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::{sqlite::SqlitePoolOptions, FromRow, SqlitePool};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    FromRow, SqlitePool,
+};
 use std::{
     collections::HashMap,
     env,
@@ -897,6 +900,19 @@ async fn migrate(db: &SqlitePool) -> Result<(), sqlx::Error> {
     ] {sqlx::query(statement).execute(db).await?;}
     Ok(())
 }
+async fn migrate_with_retry(db: &SqlitePool) -> Result<(), sqlx::Error> {
+    for attempt in 1..=12 {
+        match migrate(db).await {
+            Ok(()) => return Ok(()),
+            Err(error) if error.to_string().contains("database is locked") && attempt < 12 => {
+                tracing::warn!(attempt, "SQLite is busy during rollout; retrying migration");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!()
+}
 fn app(state: Shared, dist: PathBuf) -> Router {
     let mut general_builder = GovernorConfigBuilder::default();
     let general_config = Arc::new(
@@ -1043,13 +1059,16 @@ async fn main() {
     tokio::fs::create_dir_all(data_dir.join("uploads"))
         .await
         .expect("create data directory");
-    let url = format!("sqlite://{}?mode=rwc", data_dir.join("board.db").display());
+    let options = SqliteConnectOptions::new()
+        .filename(data_dir.join("board.db"))
+        .create_if_missing(true)
+        .busy_timeout(Duration::from_secs(30));
     let db = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&url)
+        .connect_with(options)
         .await
         .expect("open database");
-    migrate(&db).await.expect("migrate database");
+    migrate_with_retry(&db).await.expect("migrate database");
     let configured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings WHERE owner_oid<>''")
         .fetch_one(&db)
         .await
@@ -1437,5 +1456,47 @@ mod tests {
             std::os::unix::fs::PermissionsExt::mode(&permissions) & 0o777,
             0o600
         );
+    }
+
+    #[tokio::test]
+    async fn startup_migration_retries_a_locked_sqlite_database() {
+        let dir = std::env::temp_dir().join(format!("mcb-lock-test-{}", random_hex(6)));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let path = dir.join("board.db");
+        let first = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&path)
+                    .create_if_missing(true)
+                    .busy_timeout(Duration::from_millis(50)),
+            )
+            .await
+            .unwrap();
+        migrate(&first).await.unwrap();
+        let mut lock = first.begin().await.unwrap();
+        sqlx::query("INSERT INTO learners(alias,created_at) VALUES('Lock holder',0)")
+            .execute(&mut *lock)
+            .await
+            .unwrap();
+        let second = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&path)
+                    .create_if_missing(true)
+                    .busy_timeout(Duration::from_millis(50)),
+            )
+            .await
+            .unwrap();
+        let retry = tokio::spawn(async move { migrate_with_retry(&second).await });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        lock.rollback().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), retry)
+            .await
+            .expect("migration retry should finish")
+            .unwrap()
+            .expect("migration should succeed after lock release");
+        let _ = tokio::fs::remove_dir_all(dir).await;
     }
 }
