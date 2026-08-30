@@ -35,8 +35,8 @@ use tower_http::{
 struct AppState {
     db: SqlitePool,
     upload_dir: PathBuf,
-    owner_invite_hash: Option<String>,
-    owner_invite_path: Option<PathBuf>,
+    owner_invite_hash: Arc<RwLock<Option<String>>>,
+    owner_invite_path: PathBuf,
     auth: AuthState,
 }
 type Shared = Arc<AppState>;
@@ -371,14 +371,14 @@ async fn setup(
             "This board is already owned.".into(),
         ));
     }
-    let Some(owner_invite_hash) = &s.owner_invite_hash else {
+    let Some(owner_invite_hash) = s.owner_invite_hash.read().await.clone() else {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "This deployment needs an installer-issued adult setup code before it can be claimed."
                 .into(),
         ));
     };
-    if password_hash(&input.owner_code, "mcb-owner-invite") != *owner_invite_hash {
+    if password_hash(&input.owner_code, "mcb-owner-invite") != owner_invite_hash {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "That adult setup code did not match this deployment. Ask the deployment operator for the code.".into(),
@@ -388,9 +388,8 @@ async fn setup(
     sqlx::query("INSERT INTO settings(id,facilitator,group_name,owner_oid,created_at) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET facilitator=excluded.facilitator,group_name=excluded.group_name,owner_oid=excluded.owner_oid")
         .bind(input.facilitator.trim()).bind(input.group_name.trim()).bind(owner_oid).bind(now()).execute(&mut *tx).await.map_err(db_err)?;
     tx.commit().await.map_err(db_err)?;
-    if let Some(path) = &s.owner_invite_path {
-        let _ = tokio::fs::remove_file(path).await;
-    }
+    *s.owner_invite_hash.write().await = None;
+    let _ = tokio::fs::remove_file(&s.owner_invite_path).await;
     Ok(Json(json!({"ok":true})))
 }
 
@@ -516,6 +515,54 @@ async fn delete_learner(
         .await
         .map_err(db_err)?;
     remove_files(&s.upload_dir, files).await;
+    Ok(Json(json!({"ok":true})))
+}
+
+async fn delete_board(State(s): State<Shared>, headers: HeaderMap) -> ApiResult<Json<Value>> {
+    require_auth(&s, &headers).await?;
+    let files: Vec<String> = sqlx::query_scalar("SELECT stored_name FROM attachments")
+        .fetch_all(&s.db)
+        .await
+        .map_err(db_err)?;
+    let mut tx = s.db.begin().await.map_err(db_err)?;
+    for statement in [
+        "DELETE FROM attachments",
+        "DELETE FROM attempts",
+        "DELETE FROM problems",
+        "DELETE FROM circle_sessions",
+        "DELETE FROM learners",
+        "DELETE FROM settings",
+    ] {
+        sqlx::query(statement)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+    }
+    tx.commit().await.map_err(db_err)?;
+    remove_files(&s.upload_dir, files).await;
+    let code = random_hex(24);
+    tokio::fs::write(&s.owner_invite_path, &code)
+        .await
+        .map_err(|_| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "The board was deleted, but a new owner code could not be created. Restart the service before setup.".into(),
+            )
+        })?;
+    #[cfg(unix)]
+    tokio::fs::set_permissions(
+        &s.owner_invite_path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    )
+    .await
+    .map_err(|_| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "The board was deleted, but the new owner code could not be secured. Restart the service before setup.".into(),
+        )
+    })?;
+    *s.owner_invite_hash.write().await = Some(password_hash(&code, "mcb-owner-invite"));
+    tracing::info!("private board deleted; a new adult setup code was generated");
     Ok(Json(json!({"ok":true})))
 }
 
@@ -877,6 +924,7 @@ fn app(state: Shared, dist: PathBuf) -> Router {
         .route_layer(GovernorLayer::new(general_config).error_handler(rate_limit_response));
     let write_api = Router::new()
         .route("/setup", post(setup))
+        .route("/board", delete(delete_board))
         .route("/learners", post(add_learner))
         .route("/learners/{id}", delete(delete_learner))
         .route("/sessions", post(add_session))
@@ -888,11 +936,21 @@ fn app(state: Shared, dist: PathBuf) -> Router {
         .route("/files/{id}", delete(delete_file))
         .route_layer(GovernorLayer::new(write_config).error_handler(rate_limit_response));
     let api = read_api.merge(write_api).with_state(state);
+    let index = dist.join("index.html");
     Router::new()
         .route("/health", get(health))
         .nest("/api", api)
+        .route_service("/privacy", ServeFile::new(index.clone()))
+        .route_service("/terms", ServeFile::new(index.clone()))
+        .route_service("/demo", ServeFile::new(index.clone()))
+        .route_service("/board", ServeFile::new(index.clone()))
+        .route_service("/learners", ServeFile::new(index.clone()))
+        .route_service("/recap", ServeFile::new(index.clone()))
+        .route_service("/plus", ServeFile::new(index.clone()))
+        .route_service("/settings", ServeFile::new(index.clone()))
+        .route_service("/auth/callback", ServeFile::new(index.clone()))
         .fallback_service(
-            ServeDir::new(&dist).not_found_service(ServeFile::new(dist.join("index.html"))),
+            ServeDir::new(&dist).not_found_service(ServeFile::new(index)),
         )
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(6 * 1024 * 1024))
@@ -996,15 +1054,12 @@ async fn main() {
         .fetch_one(&db)
         .await
         .expect("read configuration");
-    let (owner_invite_hash, owner_invite_path, owner_invite_supplied) = if configured == 0 {
+    let owner_invite_path = data_dir.join("owner-invite.txt");
+    let (owner_invite_hash, owner_invite_supplied) = if configured == 0 {
         let (code, supplied) = owner_invite(&data_dir).expect("create owner invite");
-        (
-            Some(password_hash(&code, "mcb-owner-invite")),
-            (!supplied).then(|| data_dir.join("owner-invite.txt")),
-            supplied,
-        )
+        (Some(password_hash(&code, "mcb-owner-invite")), supplied)
     } else {
-        (None, None, false)
+        (None, false)
     };
     let auth = AuthState::from_env();
     match auth.refresh().await {
@@ -1019,7 +1074,7 @@ async fn main() {
     let state = Arc::new(AppState {
         db,
         upload_dir: data_dir.join("uploads"),
-        owner_invite_hash,
+        owner_invite_hash: Arc::new(RwLock::new(owner_invite_hash)),
         owner_invite_path,
         auth,
     });
@@ -1048,6 +1103,9 @@ mod tests {
             .await
             .unwrap();
         tokio::fs::create_dir_all(dir.join("assets")).await.unwrap();
+        tokio::fs::write(dir.join("index.html"), "<!doctype html><title>test</title>")
+            .await
+            .unwrap();
         tokio::fs::write(dir.join("assets/app-abc123.js"), "console.log('cached')")
             .await
             .unwrap();
@@ -1060,8 +1118,11 @@ mod tests {
         let state = Arc::new(AppState {
             db,
             upload_dir: dir.join("uploads"),
-            owner_invite_hash: Some(password_hash(invite, "mcb-owner-invite")),
-            owner_invite_path: None,
+            owner_invite_hash: Arc::new(RwLock::new(Some(password_hash(
+                invite,
+                "mcb-owner-invite",
+            )))),
+            owner_invite_path: dir.join("owner-invite.txt"),
             auth: AuthState {
                 tenant_id: DEFAULT_TENANT_ID.into(),
                 client_id: DEFAULT_CLIENT_ID.into(),
@@ -1302,6 +1363,79 @@ mod tests {
         assert_eq!(
             asset.headers().get(header::CACHE_CONTROL).unwrap(),
             "public, max-age=31536000, immutable"
+        );
+    }
+
+    #[tokio::test]
+    async fn legal_routes_are_200_and_unknown_routes_remain_404() {
+        let (router, _, _) = test_app("adult-setup-code-0123456789").await;
+        for route in ["/privacy", "/terms", "/demo", "/board", "/learners"] {
+            let response = router
+                .clone()
+                .oneshot(Request::builder().uri(route).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "route {route}");
+        }
+        let missing = router
+            .oneshot(
+                Request::builder()
+                    .uri("/missing-page")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn owner_can_delete_the_entire_board_and_new_invite_is_generated() {
+        let invite = "adult-setup-code-0123456789";
+        let (router, state, dir) = test_app(invite).await;
+        let setup = router
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/setup",
+                Body::from(format!(r#"{{"facilitator":"Morgan","group_name":"Saturday Circle","owner_code":"{invite}","adult_confirmed":true}}"#)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(setup.status(), StatusCode::OK);
+        let learner = router
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/learners",
+                Body::from(r#"{"alias":"Ada"}"#),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(learner.status(), StatusCode::OK);
+        let deleted = router
+            .oneshot(api_request("DELETE", "/api/board", Body::empty()))
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::OK);
+        let settings: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        let learners: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM learners")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!((settings, learners), (0, 0));
+        assert!(state.owner_invite_hash.read().await.is_some());
+        assert!(dir.join("owner-invite.txt").exists());
+        #[cfg(unix)]
+        let permissions = std::fs::metadata(dir.join("owner-invite.txt"))
+            .unwrap()
+            .permissions();
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(&permissions) & 0o777,
+            0o600
         );
     }
 }

@@ -1,12 +1,14 @@
 # Math Circle Board
 
-Math Circle Board is a private, adult-owned workspace for volunteer facilitators of small exploratory math circles. It sequences open-ended problems, records each learner’s partial thinking and strategy tags, keeps facilitator-only notes and paper-work photos, and produces a printable session recap in minutes.
+Plan and record small math-circle sessions. The board is for volunteer facilitators working with private groups of 6–12 learners.
 
-The product is intentionally not a classroom LMS, gradebook, public child profile, or chat network. Learner aliases are sufficient; no learner email is requested.
+Facilitators can sequence open problems, record partial attempts and strategy tags, keep private notes, and print a recap. The roster uses learner aliases and does not ask for learner email addresses. The board is not a gradebook, chat service, or public learner profile.
+
+[Try the isolated sample board](https://math-circle-board.sociobot.in/?demo=1). It works without an account, uses only `demo:` session-storage keys, and never calls the private board API. Reset restores the original two sessions, three learners, four problems, and four attempts.
 
 ## Run locally
 
-Requirements: Node 22+, Rust 1.89+, and SQLite support.
+Requirements: Node 22+, stable Rust, and SQLite support.
 
 ```sh
 npm install
@@ -14,46 +16,47 @@ npm run build
 cargo run
 ```
 
-Open `http://localhost:8080`. The server runs with no required environment variables and creates `./data/board.db` plus `./data/uploads/` on first boot. Adult sign-in uses the shared Sociobot Microsoft Entra External ID tenant; the browser uses Authorization Code + PKCE and the server verifies every bearer token’s signature, issuer, tenant, audience, lifetime, and stable object ID. Before anyone can claim an empty deployment, the server also creates a one-time 48-character adult setup code in `./data/owner-invite.txt` (mode `0600`). Transfer that code only to the verified adult who will own the circle, then delete any copied value after setup; the server removes the file after a successful claim. The Entra identity plus the code prevent anonymous ownership takeover. Optional configuration:
+Open `http://localhost:8080`. The server starts with no required environment variables. It stores SQLite data and uploads in `./data` locally and `/data` in the deployed container.
 
-- `PORT` — HTTP port, default `8080`
-- `DATA_DIR` — persistent SQLite/upload directory, default `./data`
-- `DIST_DIR` — built frontend directory, default `./dist`
-- `MCB_OWNER_INVITE` — optional installer-issued adult setup code; overrides the generated code and is never logged
-- `ENTRA_TENANT_ID`, `ENTRA_TENANT_SUBDOMAIN`, `ENTRA_CLIENT_ID` — optional identity overrides; the production-safe defaults are the shared Sociobot CIAM registration
+The server creates a 48-character adult setup code in `./data/owner-invite.txt` on first boot. Give that code only to the adult who will own the board. Microsoft Entra handles sign-in; private board API routes reject anonymous access.
 
-For live frontend development, run `cargo run` and `npm run dev` in separate terminals, then open Vite’s URL.
+Optional configuration:
+
+- `PORT` — HTTP port, default `8080`.
+- `DATA_DIR` — persistent SQLite and upload directory, default `./data`.
+- `DIST_DIR` — built frontend directory, default `./dist`.
+- `MCB_OWNER_INVITE` — optional adult setup code override.
+- `ENTRA_TENANT_ID`, `ENTRA_TENANT_SUBDOMAIN`, `ENTRA_CLIENT_ID` — optional Microsoft identity overrides.
 
 ## Test and build
 
 ```sh
-npm test          # TypeScript check + Vitest unit tests + Rust tests
-npm run build     # reproducible frontend output in dist/
-npm run test:e2e  # with the app running on http://127.0.0.1:4173
+npm ci
+npm test
+npm run build
+cargo build --release
+npm run test:e2e
 ```
 
-For a reproducible browser run, start the backend with an explicit local-only setup code, then run Playwright with the matching value:
+`npm run test:e2e` builds the frontend, starts an isolated test server and SQLite directory, runs Playwright 1.58.2, then removes the test data. `npm run test:claims -- --grep "@claim:demo-isolation"` runs one manifest claim from a clean server.
 
-```sh
-MCB_OWNER_INVITE=adult-setup-code-0123456789 MCB_TEST_AUTH_TOKEN=integration-test-entra-token cargo run --features test-auth
-MCB_TEST_OWNER_CODE=adult-setup-code-0123456789 MCB_TEST_AUTH_TOKEN=integration-test-entra-token PLAYWRIGHT_BASE_URL=http://127.0.0.1:8080 npm run test:e2e -- --workers=1
-```
-
-The test-only bearer value is compiled only with the explicit `test-auth` Cargo feature and accepted only when the server is started with the matching `MCB_TEST_AUTH_TOKEN`; production builds do not contain that path. The end-to-end suite covers the Microsoft-only public gate, protected adult setup, a complete session/learner/attempt/recap path, mobile authenticated use, an offline 390 px cached-board reload, legal pages, and serious/critical axe violations.
+The browser suite covers desktop and 390 px layouts, keyboard routing and focus, axe checks, legal status codes, a designed 404, offline reload, privacy, rate limits, full-board deletion, and the sample workflow. Every public claim and its clean-clone command are listed in [`.factory/claims.json`](.factory/claims.json).
 
 ## Container deployment
 
 ```sh
-docker build -t math-circle-board .
+docker build --build-arg BUILD_SHA="$(git rev-parse HEAD)" -t math-circle-board .
 docker run --rm -p 8080:8080 -v mcb-data:/data math-circle-board
 ```
 
-The multi-stage image builds the Vite frontend and Rust server, runs as a non-root user, serves on `PORT`, and persists state in `/data`. Back up that volume and use the in-app JSON export regularly.
+The multi-stage image uses the moving stable Rust toolchain, runs as a non-root user, serves `PORT`, and persists records under `/data`. `/health` returns the build SHA.
 
-## Privacy and billing
+## Privacy, limits, and price
 
-All board routes require a signed token from `sociobotcustomers.ciamlogin.com` for the Entra account bound to the board. The app stores no password and issues no authentication cookie. API endpoints are rate-limited by the first ingress-provided `X-Forwarded-For` address (20 requests/second with burst 40 for reads; 4/second with burst 8 for writes) and return `429` with `Retry-After`. Uploaded images are byte-decoded before storage and served only after bearer authorization. The app contains no analytics, advertising, remote fonts, or runtime CDN scripts. `/privacy` and `/terms` provide the product policies.
+Private board data requires the signed-in owner. The public landing page and sample flow load no analytics, ads, remote fonts, or third-party runtime scripts. Read routes use a 40-request burst and writes use an 8-request burst; limited responses return `429` with `Retry-After`.
 
-The free board includes the complete core workflow and export. Circle Plus is a $39 one-time license that unlocks a reusable strategy palette and future organization controls through Sociobot’s hosted billing API; no payment provider is embedded here.
+Settings exports the board record as JSON. A private facilitator note is not included in the printable recap. The owner can delete individual records or the complete private board.
 
-Visual direction, asset provenance, and design tokens are in [`.factory/design.md`](.factory/design.md). Licensed under the MIT License; see [`LICENSE`](LICENSE).
+The core board is free. Circle Plus is a $39 one-time option through Sociobot checkout and adds reusable strategy prompts. See [`/privacy`](https://math-circle-board.sociobot.in/privacy) and [`/terms`](https://math-circle-board.sociobot.in/terms).
+
+Visual direction and original-asset provenance are in [`.factory/design.md`](.factory/design.md). Licensed under the MIT License; see [`LICENSE`](LICENSE).

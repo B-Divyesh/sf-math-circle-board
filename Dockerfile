@@ -4,7 +4,7 @@ COPY package.json package-lock.json* tsconfig.json vite.config.ts index.html ./
 COPY frontend ./frontend
 RUN npm ci --ignore-scripts && npm run build
 
-FROM rust:1.89-alpine AS server
+FROM rust:1-alpine AS server
 RUN apk add --no-cache musl-dev
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./

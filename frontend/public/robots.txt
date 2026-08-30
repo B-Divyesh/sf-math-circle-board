@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://math-circle-board.sociobot.in/sitemap.xml

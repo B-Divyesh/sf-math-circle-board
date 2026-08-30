@@ -1,4 +1,5 @@
 import {identityToken} from './auth';
+import {demoApi,demoExport,isDemoMode} from './demo';
 
 export class ApiFailure extends Error{constructor(message:string,public status:number){super(message)}}
 
@@ -12,7 +13,8 @@ async function response(path:string,options:RequestInit={}):Promise<Response>{
   return result;
 }
 export async function api<T>(path:string,options:RequestInit={}):Promise<T>{
+  if(isDemoMode())return demoApi<T>(path,options);
   return (await response(path,options)).json() as Promise<T>;
 }
-export async function apiBlob(path:string):Promise<Blob>{return (await response(path)).blob()}
+export async function apiBlob(path:string):Promise<Blob>{if(isDemoMode()&&path==='/export')return demoExport();return (await response(path)).blob()}
 export const send=<T>(path:string,data:unknown,method='POST')=>api<T>(path,{method,body:JSON.stringify(data)});

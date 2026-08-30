@@ -1,0 +1,72 @@
+[
+  {
+    "id": "demo-isolation",
+    "claim": "Sample mode uses only isolated demo storage, never calls the private board API, and reset restores the original sample.",
+    "where": "landing action, demo banner, README, privacy",
+    "test": "npm run test:claims -- --grep @claim:demo-isolation",
+    "sandbox": "fresh browser context at /?demo=1; edit the roster; inspect storage and requests; reset"
+  },
+  {
+    "id": "attempt-record",
+    "claim": "The board records partial learner attempts, strategy status, and private facilitator notes.",
+    "where": "landing page, attempt workbench, README",
+    "test": "npm run test:claims -- --grep @claim:attempt-record",
+    "sandbox": "fresh demo; edit an attempt and private note; save and reload"
+  },
+  {
+    "id": "recap-privacy",
+    "claim": "The printable session recap includes learner thinking and leaves private facilitator notes out.",
+    "where": "landing page, recap, README",
+    "test": "npm run test:claims -- --grep @claim:recap-privacy",
+    "sandbox": "fresh demo; save distinct public thinking and private note; open printable recap"
+  },
+  {
+    "id": "json-export",
+    "claim": "Settings exports the complete board record as JSON.",
+    "where": "settings, README",
+    "test": "npm run test:claims -- --grep @claim:json-export",
+    "sandbox": "fresh demo; download JSON; parse and assert learners, sessions, attempts, private note, and attachment list"
+  },
+  {
+    "id": "offline-reload",
+    "claim": "Sample mode reloads offline after its first visit.",
+    "where": "landing facts, README",
+    "test": "npm run test:claims -- --grep @claim:offline-reload",
+    "sandbox": "fresh 390 px browser context; wait for service worker control; go offline and reload"
+  },
+  {
+    "id": "no-tracking",
+    "claim": "The public landing page and sample flow load no analytics, ads, remote fonts, or third-party runtime scripts.",
+    "where": "privacy, README",
+    "test": "npm run test:claims -- --grep @claim:no-tracking",
+    "sandbox": "record every request across landing, sample entry, and sample navigation; assert only current origin"
+  },
+  {
+    "id": "owner-access",
+    "claim": "Private board data requires the signed-in owner, while learner records use aliases without email fields.",
+    "where": "landing facts, privacy, README",
+    "test": "npm run test:claims -- --grep @claim:owner-access",
+    "sandbox": "fresh server; request private API anonymously; inspect signed-out and sample roster forms"
+  },
+  {
+    "id": "rate-limits",
+    "claim": "Read routes use a 40-request burst and writes use an 8-request burst; limited responses include 429 and Retry-After.",
+    "where": "README",
+    "test": "npm run test:claims -- --grep @claim:rate-limits",
+    "sandbox": "fresh server; concurrent read and write bursts from separate fixed forwarded IPs"
+  },
+  {
+    "id": "plus-price",
+    "claim": "The core board is free; Circle Plus is a $39 one-time option linked to Sociobot checkout.",
+    "where": "landing facts, pricing section, README, terms",
+    "test": "npm run test:claims -- --grep @claim:plus-price",
+    "sandbox": "fresh public page; assert exact price, purchase type, and Sociobot checkout URL"
+  },
+  {
+    "id": "full-delete",
+    "claim": "The signed-in owner can delete the complete private board.",
+    "where": "settings, privacy, README",
+    "test": "npm run test:claims -- --grep @claim:full-delete",
+    "sandbox": "fresh SQLite directory; claim board, add a session, confirm full deletion, assert server is unconfigured"
+  }
+]

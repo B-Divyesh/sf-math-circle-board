@@ -17,7 +17,7 @@ The product opens with one panoramic original image of a lamplit mathematics tab
 - `ember` #D36B3F — primary action and active trail; white is not used on it because dark ink gives stronger contrast.
 - `ember-ink` #8A3C23 — the ember hue darkened for small text on paper (WCAG AA), preserving ember’s role without sacrificing legibility.
 - `lantern` #F3C969 — attention and selected states, always paired with text/icon.
-- `moss` #39705A — success/completed, paired with a check or label.
+- `moss` #285A46 — success/completed, paired with a check or label; dark enough for small text on paper.
 - `danger` #A53E42 — destructive state; on paper with explicit warning text.
 
 This is an explicitly dark environmental shell with light work surfaces; a separate theme switch would weaken the “blue-hour room” metaphor. Every reading surface is painted explicitly, and both surface families meet WCAG AA.
@@ -48,3 +48,5 @@ Hero: a wide, unoccupied attic mathematics room at blue hour; slate table, paper
 Prompt sheet: “Cinematic environmental concept art of a quiet attic mathematics workshop at blue hour, unoccupied, long slate table with scattered cream index cards and pencils, a single amber task lamp illuminating hand-drawn geometric diagrams, subtle chalk arcs and number patterns, deep ink-blue walls, rain-soft window light, warm ember and muted moss accents, tactile paper and wood, 35mm lens, low eye level, volumetric but restrained light, detailed painterly realism, generous negative space on the left for interface copy. No people, no faces, no text, no letters, no watermark, no logos, no brands, no screens, no glossy corporate office, no neon gradient.”
 
 Generation: Azure AI Foundry image generation via `/opt/fleet/lib/gen-image.sh`, deployment `factory-image`, 2026-08-28. Generated imagery is original for this product. Source PNG and exact prompt sidecar live in `assets/src/`; optimized WebP/AVIF derivatives ship in the frontend. The footer discloses AI-assisted original environmental art.
+
+Repair derivatives, 2026-08-30: `frontend/public/social-card.webp` is a centered 1200×630 crop of the original 1536 px lantern-room WebP. `frontend/public/apple-touch-icon.png` is a hand-drawn raster rendering of the existing three-point circle mark using the documented night and lantern tokens. No new third-party source material was introduced.
