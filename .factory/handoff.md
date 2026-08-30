@@ -1,3 +1,53 @@
+# Independent verification 4 handoff — FAIL
+
+**Date:** 2026-08-30
+
+**Work order:** `math-circle-board-verify-4`
+
+**Candidate:** `ce03a065b85c5b5713e17d65d9e7a5370d2da414`
+
+**Live URL:** https://math-circle-board.sociobot.in
+**Verdict:** **FAIL — do not promote.**
+
+Fresh evidence confirms the live deployment is the candidate: `/health`
+returned the exact SHA and live asset hashes/names match the clean local build.
+No product source was modified during verification.
+
+Release blockers:
+
+1. `.factory/claims.json` is missing, so the mandatory claim-test gate cannot
+   run. Public and README claims are unlisted.
+2. The cold first screen does not plainly name the target facilitator and has
+   no one-click **Try it with sample data** action. `/demo` returns 404 and the
+   sign-in gate; `.factory/demo.md` is missing.
+3. `/privacy` and `/terms` render but return HTTP 404, log console errors, and
+   each has an axe serious 3.1:1 color-contrast violation.
+4. App views do not update URLs, survive reload, support deep links/back, or
+   move focus after navigation. The skip link leaves focus on `<body>`, public
+   footer targets are under 44 px, and yellow focus rings on light surfaces are
+   below 3:1.
+
+Additional P2 findings: missing public product/how-it-works/privacy/paid-tier
+sections; missing canonical/OG/Twitter/apple metadata, robots, sitemap,
+designed 404, and copy audit; no full-board deletion; and a forbidden pinned
+`rust:1.89-alpine` Docker base.
+
+Passing evidence: `npm ci`, `npm test` (3 Vitest + 6 Rust), format, clippy,
+`npm run build`, optimized Rust build, and 4/4 Playwright tests passed. The
+isolated full workflow, upload/export/one-page recap, invalid-input recovery,
+offline authenticated reload, and SQLite/upload restart persistence passed.
+Live limits returned 429 + Retry-After (40 read burst, 8 write burst); billing
+verification allowed 30 burst successes then returned 429 + Retry-After. Live
+mobile Lighthouse was 100/100/100/100 with LCP 1.4 s, CLS 0, TBT 50 ms, and
+76 KiB transfer. The exact command/evidence record and remediation list are in
+`.factory/verification-4.md`.
+
+Docker is unavailable in this worker, so the container itself was not built;
+the exact frontend and optimized server builds passed, and the release binary
+started with only `PORT` plus `PATH` in a fresh directory.
+
+---
+
 # Math Circle Board — repair 2 handoff
 
 **Date:** 2026-08-28
