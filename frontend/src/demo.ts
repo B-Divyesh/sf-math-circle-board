@@ -1,6 +1,7 @@
 import type {Board} from './types';
 
 const demoKey='demo:math-circle-board:board';
+const demoFilePrefix='demo:math-circle-board:file:';
 
 export function isDemoMode():boolean{
   return location.pathname==='/demo'||new URLSearchParams(location.search).get('demo')==='1';
@@ -120,6 +121,25 @@ export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
     item.updated_at=Math.floor(Date.now()/1000);
     writeBoard(current);return {id:item.id,updated_at:item.updated_at} as T;
   }
+  const uploadMatch=path.match(/^\/attempts\/(\d+)\/upload$/);
+  if(uploadMatch&&method==='POST'&&options.body instanceof FormData){
+    const file=options.body.get('image');
+    if(!(file instanceof File)||!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024)throw new Error('Use a JPEG, PNG, or WebP image under 5 MB.');
+    const id=nextId(current.attachments);
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    let binary='';
+    for(const byte of bytes)binary+=String.fromCharCode(byte);
+    sessionStorage.setItem(`${demoFilePrefix}${id}`,JSON.stringify({mime:file.type,data:btoa(binary)}));
+    current.attachments.push({id,attempt_id:Number(uploadMatch[1]),original_name:file.name, mime:file.type,created_at:Math.floor(Date.now()/1000)});
+    writeBoard(current);return {id} as T;
+  }
+  const fileMatch=path.match(/^\/files\/(\d+)$/);
+  if(fileMatch&&method==='DELETE'){
+    const id=Number(fileMatch[1]);
+    current.attachments=current.attachments.filter(item=>item.id!==id);
+    sessionStorage.removeItem(`${demoFilePrefix}${id}`);
+    writeBoard(current);return {ok:true} as T;
+  }
   if(path==='/board'&&method==='DELETE'){
     clearDemo();return {ok:true} as T;
   }
@@ -127,5 +147,18 @@ export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
 }
 
 export function demoExport():Blob{
-  return new Blob([JSON.stringify({...readBoard(),attachment_files:[]},null,2)],{type:'application/json'});
+  const current=readBoard();
+  const attachment_files=current.attachments.map(item=>{
+    const stored=JSON.parse(sessionStorage.getItem(`${demoFilePrefix}${item.id}`)||'{"data":""}') as {data:string};
+    return {id:item.id,original_name:item.original_name,mime:item.mime,data_base64:stored.data};
+  });
+  return new Blob([JSON.stringify({...current,attachment_files},null,2)],{type:'application/json'});
+}
+
+export function demoFile(path:string):Blob{
+  const id=Number(path.match(/^\/files\/(\d+)$/)?.[1]);
+  const stored=JSON.parse(sessionStorage.getItem(`${demoFilePrefix}${id}`)||'null') as {mime:string;data:string}|null;
+  if(!stored)throw new Error('Sample image not found.');
+  const binary=atob(stored.data);
+  return new Blob([Uint8Array.from(binary,character=>character.charCodeAt(0))],{type:stored.mime});
 }

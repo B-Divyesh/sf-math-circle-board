@@ -51,9 +51,12 @@ test('@claim:attempt-record demo records partial attempts and private notes',asy
   await page.getByLabel('Private facilitator note').fill('Ask for a diagram before the next hint.');
   await page.getByRole('button',{name:'Save attempt'}).click();
   await expect(page.getByText('Attempt saved.')).toBeVisible();
+  await page.getByLabel('Add photo').setInputFiles('frontend/public/art/lantern-room-768.webp');
+  await expect(page.getByRole('img',{name:/Uploaded attempt/})).toBeVisible();
   await page.reload();
   await expect(page.getByLabel('What they tried')).toHaveValue('Grouped the moves into pairs and checked the parity.');
   await expect(page.getByLabel('Private facilitator note')).toHaveValue('Ask for a diagram before the next hint.');
+  await expect(page.getByRole('img',{name:/Uploaded attempt/})).toBeVisible();
 });
 
 test('@claim:recap-privacy printable recap omits private notes',async({page})=>{
@@ -201,6 +204,25 @@ test('@claim:full-delete the owner can delete the complete private board',async(
   await page.getByLabel('Session title').fill('Parity paths');
   await page.getByLabel('Guiding focus').fill('What never changes?');
   await page.getByRole('button',{name:'Add session'}).click();
+  await page.getByRole('button',{name:'Add problem'}).click();
+  await page.getByLabel('Short title').fill('The coin trail');
+  await page.getByLabel('Open prompt').fill('Move one coin at a time. Which arrangements can you reach?');
+  await page.getByRole('button',{name:'Add to sequence'}).click();
+  await page.getByRole('link',{name:'Learners'}).click();
+  await page.getByLabel('Learner alias').fill('Ada');
+  await page.getByRole('button',{name:'Add learner'}).click();
+  await page.getByRole('link',{name:'Board',exact:true}).click();
+  await page.getByLabel('What they tried').fill('Marked odd gaps and tested the smallest row first.');
+  await page.getByLabel('Private facilitator note').fill('Ask for the invariant next time.');
+  await page.getByText('◐ Exploring',{exact:true}).click();
+  await page.getByRole('button',{name:'Save attempt'}).click();
+  await page.getByLabel('Add photo').setInputFiles('frontend/public/art/lantern-room-768.webp');
+  await expect(page.getByRole('img',{name:/Uploaded attempt/})).toBeVisible();
+  const exported=await page.evaluate(async token=>{const response=await fetch('/api/export',{headers:{Authorization:`Bearer ${token}`}});return response.json()},authToken);
+  expect(exported.attachment_files).toHaveLength(1);
+  await page.getByRole('button',{name:'Print recap'}).click();
+  await expect(page.getByText('Marked odd gaps and tested the smallest row first.')).toBeVisible();
+  await expect(page.getByText('Ask for the invariant next time.')).toHaveCount(0);
   await page.getByRole('link',{name:'Settings'}).click();
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Delete the entire board'}).click();
