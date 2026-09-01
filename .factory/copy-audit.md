@@ -1,6 +1,6 @@
 # Landing-page copy audit
 
-Audited 30 August 2026. Counts treat hyphenated terms and `6–12` as one word. No line exceeds 22 words, and no line uses a banned marketing word.
+Audited 1 September 2026. Counts treat hyphenated terms and `6–12` as one word. No line exceeds 22 words, and no line uses a banned marketing word.
 
 | Landing text | Words |
 |---|---:|

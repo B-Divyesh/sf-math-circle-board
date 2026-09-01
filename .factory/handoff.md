@@ -1,3 +1,119 @@
+# Math Circle Board — repair 5 handoff
+
+**Date:** 2026-09-01
+
+**Work order:** `math-circle-board-repair-5`
+
+**Failed verifier report:** `0a22d2158efe9ae3ebead92a4be9477452503a71`
+
+**Failed candidate:** `74ea740340bd2d47f5287099e0d1eecea57b0cf3`
+
+**Application repair commit:** `d73ca0dc1274d50f951b908b06bc4af6fda5b966`
+
+**Live URL:** https://math-circle-board.sociobot.in
+
+## Reproduction and repairs
+
+- Reproduced the sample-alias defect before editing at 390 px. Adding `ada`
+  to the seeded `Ada` produced
+  `{"aliases":["Ada","Noor","Milo","ada"],"error":"","duplicateCount":2}`.
+  Sample mode now trims once and rejects case-insensitive duplicates with the
+  backend's exact message. The regression submits mixed-case `aDa`, asserts
+  the error, one matching alias, and the unchanged three-row roster.
+- Replaced the untestable “future organization tools” promise with one exact
+  Circle Plus outcome: four reusable strategy prompts in the attempt
+  workbench. New claim `plus-strategy-palette` counts all four buttons, applies
+  **Draw a diagram**, saves the attempt, reloads, and proves it remains saved.
+  Landing, Plus, README, terms, copy audit, and claims manifest now agree.
+- Raised strategy-chip remove buttons from 36×36 to 44×44 CSS px. App-footer
+  legal links and public content/footer links now have at least 44×44
+  activation areas. A 390 px regression scans all visible links, buttons,
+  inputs, selects, textareas, and upload labels on eight public/demo routes and
+  fails with the name and geometry of any undersized target.
+
+## Local verification
+
+All commands ran from `/work/repo` on the committed repair:
+
+```text
+npm ci
+PASS — 60 packages installed; 0 vulnerabilities
+
+npm test
+PASS — TypeScript; Vitest 3/3; Rust 11/11
+
+cargo fmt --all -- --check
+PASS
+
+cargo clippy --all-targets --all-features -- -D warnings
+PASS
+
+npm run build
+PASS — dist/ created; entry JS 45.03 KB raw / 14.86 KB gzip;
+CSS 25.54 KB raw / 6.27 KB gzip; lazy identity JS 268.93 KB raw /
+67.30 KB gzip
+
+BUILD_SHA=repair-5-local cargo build --release
+PASS
+
+npm run test:e2e
+PASS — Playwright 1.58.2, 15/15
+
+npm run test:cold-claims
+PASS — fresh clone/install/empty Cargo target; all 11 manifest commands passed
+individually, including plus-strategy-palette
+```
+
+The full browser run covers desktop and 390 px, keyboard skip/focus/back,
+serious/critical axe checks, 44 px target geometry, demo duplicate aliases,
+paid-prompt use and persistence, legal/404 routes, privacy request logging,
+offline service-worker reload, read/write rate-limit policy, the complete owner
+workflow, and full deletion on disposable local data.
+
+`verify-url.sh http://127.0.0.1:18084/` returned 200 with the expected title,
+`lang=en`, one h1, a main landmark, no missing alt text, no unnamed buttons,
+and no console errors. Local mobile Lighthouse 12.8.2 scored Performance 99,
+Accessibility 100, Best Practices 100, and SEO 100; FCP 1.3 s, LCP 1.8 s,
+TBT 70 ms, CLS 0, and 99 KiB transferred.
+
+## Deployment and live evidence
+
+- Factory ACR run `ch1qm` built
+  `sf-math-circle-board:d73ca0dc1274`. The product-scoped
+  `sf-math-circle-board` app was patched with the existing
+  `sf-math-circle-board-data` mount at `/data`, its existing configuration and
+  probes preserved, and one replica retained for SQLite.
+- `/health` returned
+  `{"build":"d73ca0dc1274d50f951b908b06bc4af6fda5b966","ok":true}`.
+  The live entry-JS SHA-256 exactly matched local:
+  `e05b28b202550e930c9a4b0d97129fe9c8864d766d80f3e0d567f51d530fae41`.
+- The non-destructive live Playwright run passed 14/14. Full deletion remained
+  local-only. The live run includes the repaired alias, Plus, mobile target,
+  privacy, offline, axe, routing, and rate-limit checks.
+- Live `verify-url.sh` passed with no console/accessibility smoke errors. Live
+  mobile Lighthouse scored 100 in Performance, Accessibility, Best Practices,
+  and SEO; FCP 1.2 s, LCP 1.4 s, TBT 0 ms, CLS 0, and 73 KiB transferred.
+- `/`, `/demo`, `/privacy`, `/terms`, `/robots.txt`, `/sitemap.xml`,
+  `/manifest.webmanifest`, and `/sw.js` returned 200. The designed unknown
+  route returned 404 and private `/api/board` returned 401.
+- HSTS, CSP with `frame-ancestors 'none'`, nosniff, frame denial, same-origin
+  referrer policy, and restrictive permissions policy were present. The live
+  hashed JS returned `public, max-age=31536000, immutable`.
+- Microsoft sign-in reached `sociobotcustomers.ciamlogin.com`, the configured
+  tenant path, and client ID `25c704f4-465a-47af-80ab-2c489466b697`.
+- A live 100-request concurrent `/health` smoke returned 100 HTTP 200 results.
+
+## Known boundaries
+
+- A real Microsoft credential exchange and paid checkout were not submitted.
+  Redirect configuration, owner enforcement, checkout URL, cached license
+  behavior, and the paid feature outcome are covered without credentials or a
+  purchase.
+- Docker is unavailable in this worker. The same Dockerfile completed in the
+  product-scoped ACR build and deployed successfully.
+
+---
+
 # Math Circle Board — independent verification 6 handoff
 
 **Date:** 2026-09-01
