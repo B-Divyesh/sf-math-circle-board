@@ -1,24 +1,121 @@
-# Math Circle Board — verification 5 handoff
+# Math Circle Board — repair 4 handoff
 
-**Current release decision: FAIL — do not promote candidate `9b865187a20becba99263c262f547f08849e176f`.**
+**Date:** 2026-09-01
 
-Independent QA on 2026-09-01 confirmed that the deployed `/health` build and
-the three production frontend artifacts match this candidate exactly. The
-product's ordinary sample workflow, privacy request boundary, rate limiting,
-responsive layout, keyboard behavior, and most accessibility checks passed.
+**Work order:** `math-circle-board-repair-4`
 
-Release is blocked by two P1 findings recorded in
-[`verification-5.md`](verification-5.md): the designed 404 page has an axe
-serious 1.36:1 color-contrast result, and the first required claim command
-fails from a cold build because the test runner's 30-second startup allowance
-expires before an uncached Rust compilation completes. All ten claim assertions
-pass only after the backend compilation is warm. No product source was changed
-by this verifier.
+**Failed candidate:** `9b865187a20becba99263c262f547f08849e176f`
 
-To verify after repair: run `npm ci`, each command in `.factory/claims.json`
-from a cold build, `npm test`, `npm run test:e2e`, `npm run build`, and
-`BUILD_SHA=<candidate> cargo build --release`; then repeat axe on desktop and
-390 px `/`, `/?demo=1`, `/privacy`, `/terms`, and `/not-a-real-page`.
+**Verification report:** `f4467c263cd3ce7d24922201dd587f3defb97dca`
+
+**Artifact:** containerized web app with Rust/axum, SQLite, and Vite/TypeScript
+
+## Reproduced failures
+
+- In a fresh clone at the failed candidate, after `npm ci` and with an empty
+  `CARGO_TARGET_DIR`, `npm run test:claims -- --grep @claim:demo-isolation`
+  exited 1 after the harness's fixed 30-second health wait. The uncached Rust
+  compiler was still running and Playwright never started.
+- The verifier measured the decorative 404 numeral as `#303533` on `#101D2A`,
+  only 1.36:1. The existing browser test asserted the 404 response and heading
+  but navigated away before running axe on that page.
+
+## Repair completed
+
+- `scripts/run-e2e.sh` now performs one explicit backend build before the
+  server-start deadline. That build is bounded at 600 seconds by default. The
+  harness then executes the already-built binary directly and retains the
+  30-second health allowance for application startup only.
+- Added `npm run test:cold-claims`. It clones the committed repository, runs
+  `npm ci`, uses an empty Cargo target, reads every exact command from
+  `.factory/claims.json`, and executes each command with a bounded timeout.
+- Changed the 404 numeral to the documented `aged-brass` color `#80785D`, which
+  has 3.87:1 contrast on the `night` background while remaining visually
+  subordinate to the recovery heading.
+- Added a 390 px serious/critical axe assertion on `/not-a-real-page` before
+  the test navigates away. The old color fails this assertion; the repaired
+  color passes.
+
+## Exact local verification
+
+```text
+npm ci
+PASS — 60 packages installed; 0 vulnerabilities
+
+npm run test:cold-claims
+PASS — fresh clone, fresh npm install, empty Cargo target; all 10 exact claim
+commands passed. The first cold compile exceeded the old 30-second window and
+then completed inside the separate build bound.
+
+npm test
+PASS — TypeScript; Vitest 3/3; Rust 11/11
+
+cargo fmt --all -- --check
+PASS
+
+cargo clippy --all-targets --all-features -- -D warnings
+PASS
+
+npm run build
+PASS — dist/ created; entry JS 44.98 KB raw / 14.87 KB gzip; lazy identity JS
+268.93 KB raw / 67.30 KB gzip; CSS 25.28 KB raw / 6.22 KB gzip
+
+npm run test:e2e
+PASS — Playwright 1.58.2, 12/12
+
+BUILD_SHA=6e00e896df001274a8bc7218ec069d42446a9f6c cargo build --release
+PASS — exact-SHA release build completed after a full uncached release build
+```
+
+The full browser suite covers the sample workflow, isolated and resettable
+demo state, JSON export, printable-note privacy, offline reload, same-origin
+requests, desktop and 390 px layouts, keyboard and focus routing, legal routes,
+the designed 404, serious/critical axe findings, read/write rate limits,
+ownership protection, complete board setup, and full deletion.
+
+Additional evidence:
+
+- The release binary started in a fresh directory with only `PORT` and process
+  `PATH`. It created `./data/board.db`, generated a mode-0600 owner invite, and
+  returned the exact build SHA from `/health`.
+- `verify-url.sh http://127.0.0.1:18084/ <evidence-dir>` returned HTTP 200 with
+  the expected title, `lang=en`, one h1, a main landmark, no missing alt text,
+  no unnamed buttons, and no console errors.
+- Local mobile Lighthouse: Performance 100, Accessibility 100, Best Practices
+  100, SEO 100; LCP 1.8 s; CLS 0; TBT 10 ms; 99 KiB transferred.
+- `/`, `/demo`, `/privacy`, `/terms`, `/robots.txt`, and `/sitemap.xml` returned
+  200. `/not-a-real-page` returned the designed page with HTTP 404 and the full
+  security-header policy.
+- A repository scan found no embedded access keys or private-key material.
+- This web product has no distributable package or separate consumer test.
+
+## Live deployment evidence
+
+- Factory ACR run `ch1p4` built
+  `sf-math-circle-board:6e00e896df00`. The existing
+  `sf-math-circle-board` app was patched with its single-replica `/data` mount,
+  existing environment, secrets, and probes preserved.
+- `/health` returned
+  `{"build":"6e00e896df001274a8bc7218ec069d42446a9f6c","ok":true}`.
+- SHA-256 hashes for live `index.html`, entry JS, CSS, and lazy identity JS
+  exactly matched the local production build.
+- The live `verify-url.sh` run passed with no console errors. All 11
+  non-destructive browser tests passed against the HTTPS deployment, including
+  the mobile 404 axe check and rate-limit policy. Full deletion passed only
+  against disposable local data and was intentionally not run on production.
+- Live mobile Lighthouse: Performance 100, Accessibility 100, Best Practices
+  100, SEO 100; LCP 1.2 s; CLS 0; TBT 0 ms; 73 KiB transferred.
+
+## Deployment configuration and known boundaries
+
+- Product target: `sf-math-circle-board` only.
+- Public URL: `https://math-circle-board.sociobot.in`.
+- Container port: `8080`.
+- Persistent data directory: `/data` on the existing product-scoped
+  `sf-math-circle-board-data` mount.
+- A real Microsoft account exchange and paid checkout were not automated.
+  Tests cover the configured authority, owner boundary, and Sociobot checkout
+  URL without submitting credentials or payment.
 
 ---
 
