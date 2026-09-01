@@ -75,6 +75,9 @@ export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
   const input=bodyOf(options);
   if(path==='/learners'&&method==='POST'){
     const alias=String(input.alias||'').trim();
+    if(!alias||[...alias].length>60){
+      throw new Error('Enter a learner alias of 60 characters or fewer.');
+    }
     if(current.learners.some(learner=>learner.alias.toLowerCase()===alias.toLowerCase())){
       throw new Error('That learner alias is already in the circle.');
     }

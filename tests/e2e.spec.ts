@@ -53,6 +53,26 @@ test('demo rejects learner aliases case-insensitively like the backend',async({p
   await expect(page.locator('.learner-list > li')).toHaveCount(3);
 });
 
+test('demo rejects whitespace-only aliases with recovery like the backend',async({page})=>{
+  await page.goto('/learners?demo=1');
+  await page.getByLabel('Learner alias').fill('   ');
+  await page.getByRole('button',{name:'Add learner'}).click();
+  await expect(page.locator('.add-learner .form-error')).toHaveText('Enter a learner alias of 60 characters or fewer.');
+  await expect(page.locator('.learner-list > li')).toHaveCount(3);
+  await page.getByLabel('Learner alias').fill('Ravi');
+  await page.getByRole('button',{name:'Add learner'}).click();
+  await expect(page.getByText('Ravi',{exact:true})).toBeVisible();
+  await expect(page.locator('.learner-list > li')).toHaveCount(4);
+});
+
+test('both demo entry points use the demo-specific document title',async({page})=>{
+  for(const route of ['/demo','/?demo=1']){
+    await page.goto(route);
+    await expect(page).toHaveURL(/\/board\?demo=1(?:#main)?$/);
+    await expect(page).toHaveTitle('Demo — Math Circle Board');
+  }
+});
+
 test('@claim:attempt-record demo records partial attempts and private notes',async({page})=>{
   await page.goto('/?demo=1');
   await page.getByLabel('What they tried').fill('Grouped the moves into pairs and checked the parity.');
@@ -157,11 +177,12 @@ test('@claim:rate-limits read and write bursts return 429 with Retry-After',asyn
   expect(writeLimited[0].headers()['retry-after']).toMatch(/^\d+$/);
 });
 
-test('@claim:plus-price core board is free and Plus is a $39 one-time option',async({page})=>{
+test('@claim:plus-availability the free board is available while Plus purchase is unavailable',async({page})=>{
   await page.goto('/');
-  await expect(page.getByText('Core board: free. Circle Plus: $39 once.')).toBeVisible();
-  const buy=page.getByRole('link',{name:'Buy Circle Plus through Sociobot'});
-  await expect(buy).toHaveAttribute('href','https://api.sociobot.in/api/v1/products/math-circle-board/checkout');
+  await expect(page.getByText('Core board: free. Circle Plus: not for sale yet.')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Circle Plus purchase is unavailable'})).toBeVisible();
+  await expect(page.getByText('Checkout registration is not complete. The free board remains available.')).toBeVisible();
+  await expect(page.locator(`a[href="https://api.sociobot.in/api/v1/products/math-circle-board/checkout"]`)).toHaveCount(0);
 });
 
 test('@claim:plus-strategy-palette Plus adds and saves a reusable strategy prompt',async({page})=>{

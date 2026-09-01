@@ -56,11 +56,11 @@
     "sandbox": "fresh server; concurrent read and write bursts from separate fixed forwarded IPs"
   },
   {
-    "id": "plus-price",
-    "claim": "The core board is free; Circle Plus is a $39 one-time option linked to Sociobot checkout.",
-    "where": "landing facts, pricing section, README, terms",
-    "test": "npm run test:claims -- --grep @claim:plus-price",
-    "sandbox": "fresh public page; assert exact price, purchase type, and Sociobot checkout URL"
+    "id": "plus-availability",
+    "claim": "The core board is free; Circle Plus purchase is unavailable until checkout registration is complete.",
+    "where": "landing facts, Plus section, README, privacy, terms",
+    "test": "npm run test:claims -- --grep @claim:plus-availability",
+    "sandbox": "fresh public page; assert the unavailability notice and absence of the unavailable checkout link"
   },
   {
     "id": "plus-strategy-palette",

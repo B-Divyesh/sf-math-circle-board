@@ -16,7 +16,7 @@ Audited 1 September 2026. Counts treat hyphenated terms and `6–12` as one word
 | Private boards require the owner’s Microsoft sign-in. | 7 |
 | Sample mode reloads offline after its first visit. | 8 |
 | Core board: free. | 3 |
-| Circle Plus: $39 once. | 4 |
+| Circle Plus: not for sale yet. | 6 |
 | Sample problem cards on a facilitator’s table. | 7 |
 | See one session at a glance | 6 |
 | The board keeps the problem order, learner status, and next discussion prompt together. | 12 |
@@ -29,10 +29,10 @@ Audited 1 September 2026. Counts treat hyphenated terms and `6–12` as one word
 | Use aliases instead of learner emails. | 6 |
 | The board is not a gradebook, chat service, or public learner profile. | 12 |
 | Read the privacy details | 4 |
-| Circle Plus costs $39 once | 5 |
-| The free board includes sessions, attempts, private notes, recaps, and JSON export. | 12 |
-| Plus adds four reusable strategy prompts to the attempt workbench. | 10 |
-| Buy Circle Plus through Sociobot | 5 |
+| Circle Plus purchase is unavailable | 5 |
+| Checkout registration is not complete. | 5 |
+| The free board remains available. | 5 |
+| Preview four strategy prompts | 4 |
 | Plan and record small math-circle sessions. | 6 |
 
 ## Terminology
