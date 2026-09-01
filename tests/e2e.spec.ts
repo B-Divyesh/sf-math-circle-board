@@ -170,6 +170,7 @@ test('legal, 404, mobile, keyboard, routes, and focus pass regression checks',as
   const missing=await page.goto('/not-a-real-page');
   expect(missing?.status()).toBe(404);
   await expect(page.getByRole('heading',{level:1})).toHaveText('This page does not exist');
+  expect(await seriousAxe(page)).toEqual([]);
   errors.length=0;
   await page.goto('/?demo=1');
   await page.keyboard.press('Tab');

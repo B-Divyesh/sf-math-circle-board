@@ -6,6 +6,17 @@ test_data_dir="$(mktemp -d)"
 test_port="${MCB_TEST_PORT:-18081}"
 server_log="$test_data_dir/server.log"
 server_pid=""
+backend_build_timeout="${MCB_BACKEND_BUILD_TIMEOUT_SECONDS:-600}"
+
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+  cargo_target_dir="$CARGO_TARGET_DIR"
+  if [[ "$cargo_target_dir" != /* ]]; then
+    cargo_target_dir="$repo_dir/$cargo_target_dir"
+  fi
+else
+  cargo_target_dir="$repo_dir/target"
+fi
+backend_bin="$cargo_target_dir/debug/math-circle-board"
 
 cleanup() {
   if [[ -n "$server_pid" ]]; then
@@ -18,13 +29,20 @@ trap cleanup EXIT
 
 cd "$repo_dir"
 npm run build
+
+printf 'Building the browser-test backend before the startup deadline...\n'
+if ! timeout "$backend_build_timeout" cargo build --quiet --features test-auth --bin math-circle-board; then
+  printf 'Backend build did not finish within %s seconds.\n' "$backend_build_timeout" >&2
+  exit 1
+fi
+
 PORT="$test_port" \
 DATA_DIR="$test_data_dir/data" \
 DIST_DIR="$repo_dir/dist" \
 MCB_OWNER_INVITE="adult-setup-code-0123456789" \
 MCB_TEST_AUTH_TOKEN="integration-test-entra-token" \
 BUILD_SHA="browser-test" \
-cargo run --quiet --features test-auth >"$server_log" 2>&1 &
+"$backend_bin" >"$server_log" 2>&1 &
 server_pid="$!"
 
 for _ in $(seq 1 120); do

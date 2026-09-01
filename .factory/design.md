@@ -17,6 +17,7 @@ The product opens with one panoramic original image of a lamplit mathematics tab
 - `ember` #D36B3F — primary action and active trail; white is not used on it because dark ink gives stronger contrast.
 - `ember-ink` #8A3C23 — the ember hue darkened for small text on paper (WCAG AA), preserving ember’s role without sacrificing legibility.
 - `lantern` #F3C969 — attention and selected states, always paired with text/icon.
+- `aged-brass` #80785D — subdued decorative marks on night (3.87:1), including the oversized 404 numeral.
 - `moss` #285A46 — success/completed, paired with a check or label; dark enough for small text on paper.
 - `danger` #A53E42 — destructive state; on paper with explicit warning text.
 
