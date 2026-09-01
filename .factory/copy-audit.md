@@ -31,7 +31,7 @@ Audited 30 August 2026. Counts treat hyphenated terms and `6–12` as one word. 
 | Read the privacy details | 4 |
 | Circle Plus costs $39 once | 5 |
 | The free board includes sessions, attempts, private notes, recaps, and JSON export. | 12 |
-| Plus adds reusable strategy prompts. | 5 |
+| Plus adds four reusable strategy prompts to the attempt workbench. | 10 |
 | Buy Circle Plus through Sociobot | 5 |
 | Plan and record small math-circle sessions. | 6 |
 

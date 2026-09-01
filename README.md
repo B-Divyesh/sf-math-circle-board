@@ -60,6 +60,6 @@ Private board data requires the signed-in owner. The public landing page and sam
 
 Settings exports the board record as JSON. A private facilitator note is not included in the printable recap. The owner can delete individual records or the complete private board.
 
-The core board is free. Circle Plus is a $39 one-time option through Sociobot checkout and adds reusable strategy prompts. See [`/privacy`](https://math-circle-board.sociobot.in/privacy) and [`/terms`](https://math-circle-board.sociobot.in/terms).
+The core board is free. Circle Plus is a $39 one-time option through Sociobot checkout. It adds four reusable strategy prompts to the attempt workbench. See [`/privacy`](https://math-circle-board.sociobot.in/privacy) and [`/terms`](https://math-circle-board.sociobot.in/terms).
 
 Visual direction and original-asset provenance are in [`.factory/design.md`](.factory/design.md). Licensed under the MIT License; see [`LICENSE`](LICENSE).

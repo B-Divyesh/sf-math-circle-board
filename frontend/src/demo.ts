@@ -74,8 +74,12 @@ export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
   const current=readBoard();
   const input=bodyOf(options);
   if(path==='/learners'&&method==='POST'){
+    const alias=String(input.alias||'').trim();
+    if(current.learners.some(learner=>learner.alias.toLowerCase()===alias.toLowerCase())){
+      throw new Error('That learner alias is already in the circle.');
+    }
     const id=nextId(current.learners);
-    current.learners.push({id,alias:String(input.alias||'').trim(),created_at:Date.now()/1000});
+    current.learners.push({id,alias,created_at:Date.now()/1000});
     writeBoard(current);return {id} as T;
   }
   const learnerMatch=path.match(/^\/learners\/(\d+)$/);

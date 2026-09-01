@@ -63,6 +63,13 @@
     "sandbox": "fresh public page; assert exact price, purchase type, and Sociobot checkout URL"
   },
   {
+    "id": "plus-strategy-palette",
+    "claim": "Circle Plus provides four reusable strategy prompts; choosing one adds it to the attempt and saving keeps it after reload.",
+    "where": "landing pricing, Plus page, attempt workbench, README, terms",
+    "test": "npm run test:claims -- --grep @claim:plus-strategy-palette",
+    "sandbox": "fresh demo; open Plus; count four prompts; choose Draw a diagram; save and reload the attempt"
+  },
+  {
     "id": "full-delete",
     "claim": "The signed-in owner can delete the complete private board.",
     "where": "settings, privacy, README",

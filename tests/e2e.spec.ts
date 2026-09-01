@@ -44,6 +44,15 @@ test('@claim:demo-isolation sample mode is isolated and resettable',async({page}
   await expect(page.getByRole('link',{name:'Start for real'})).toHaveAttribute('href','/');
 });
 
+test('demo rejects learner aliases case-insensitively like the backend',async({page})=>{
+  await page.goto('/learners?demo=1');
+  await page.getByLabel('Learner alias').fill('aDa');
+  await page.getByRole('button',{name:'Add learner'}).click();
+  await expect(page.locator('.add-learner .form-error')).toHaveText('That learner alias is already in the circle.');
+  await expect(page.locator('.learner-list strong').filter({hasText:/^Ada$/i})).toHaveCount(1);
+  await expect(page.locator('.learner-list > li')).toHaveCount(3);
+});
+
 test('@claim:attempt-record demo records partial attempts and private notes',async({page})=>{
   await page.goto('/?demo=1');
   await page.getByLabel('What they tried').fill('Grouped the moves into pairs and checked the parity.');
@@ -155,6 +164,20 @@ test('@claim:plus-price core board is free and Plus is a $39 one-time option',as
   await expect(buy).toHaveAttribute('href','https://api.sociobot.in/api/v1/products/math-circle-board/checkout');
 });
 
+test('@claim:plus-strategy-palette Plus adds and saves a reusable strategy prompt',async({page})=>{
+  await page.goto('/plus?demo=1');
+  await expect(page.getByRole('heading',{name:'Four strategy prompts are available'})).toBeVisible();
+  await page.getByRole('link',{name:'Board',exact:true}).click();
+  const palette=page.getByLabel('Circle Plus strategy palette');
+  await expect(palette.getByRole('button')).toHaveCount(4);
+  await palette.getByRole('button',{name:'+ Draw a diagram',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Remove strategy Draw a diagram'})).toBeVisible();
+  await page.getByRole('button',{name:'Save attempt'}).click();
+  await expect(page.getByText('Attempt saved.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button',{name:'Remove strategy Draw a diagram'})).toBeVisible();
+});
+
 test('legal, 404, mobile, keyboard, routes, and focus pass regression checks',async({browser})=>{
   const context=await browser.newContext({viewport:{width:390,height:844}});
   const page=await context.newPage();
@@ -189,6 +212,25 @@ test('legal, 404, mobile, keyboard, routes, and focus pass regression checks',as
   expect(await page.evaluate(()=>document.body.scrollWidth)).toBe(390);
   expect(await seriousAxe(page)).toEqual([]);
   expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('all visible mobile controls have at least a 44 by 44 CSS pixel target',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844}});
+  const page=await context.newPage();
+  for(const route of ['/','/?demo=1','/learners?demo=1','/plus?demo=1','/settings?demo=1','/privacy','/terms','/not-a-real-page']){
+    await page.goto(route);
+    const smallTargets=await page.locator('a,button,input,select,textarea,label.upload-button').evaluateAll(nodes=>nodes.flatMap(node=>{
+      const element=node as HTMLElement;
+      const rect=element.getBoundingClientRect();
+      const style=getComputedStyle(element);
+      if(style.display==='none'||style.visibility==='hidden'||rect.width===0||rect.height===0)return [];
+      if(element instanceof HTMLInputElement&&['hidden','radio','file'].includes(element.type))return [];
+      if(rect.width>=44&&rect.height>=44)return [];
+      return [{name:element.getAttribute('aria-label')||element.textContent?.trim()||element.getAttribute('placeholder')||element.tagName,width:rect.width,height:rect.height}];
+    }));
+    expect(smallTargets,`${route} has undersized controls`).toEqual([]);
+  }
   await context.close();
 });
 
