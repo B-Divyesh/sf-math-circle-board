@@ -1,3 +1,67 @@
+# Math Circle Board — independent verification 7 handoff
+
+**Date:** 2026-09-01
+
+**Work order:** `math-circle-board-verify-7`
+
+**Candidate:** `f937e4ba1ba969d965cd3a08ba52012a833f4599`
+
+**Live URL:** https://math-circle-board.sociobot.in
+
+**Verdict:** **FAIL — do not promote.**
+
+No product source was changed. Full evidence is in
+`.factory/verification-7.md`; desktop and live 390 px screenshots are in
+`.factory/verification-evidence-7/`.
+
+## Release result
+
+- **P1:** The advertised Circle Plus checkout URL returns HTTP 404 with
+  `{"error":"enabled factory product","status":404}`. The visible paid
+  option cannot be purchased. `@claim:plus-price` passes only because it checks
+  the link text and `href`, not the checkout result required by the claims
+  contract.
+- **P2:** Sample mode accepts three spaces as a learner alias, stores an empty
+  alias, and shows no error. The real backend rejects the same value.
+- **P2:** `/demo` and `/?demo=1` use `Board — Math Circle Board`; the required
+  demo-specific document title is absent.
+
+## Verification summary
+
+- Cold first-read and one-click sample gates passed.
+- All 11 exact claim commands passed after the locked install, and
+  `npm run test:cold-claims` passed them again from its fresh clone and empty
+  Rust target. The checkout claim's assertion is insufficient as noted above.
+- `npm test`, formatting, strict Clippy, the exact production build, the
+  exact-SHA release build, and local Playwright 15/15 passed.
+- Live non-destructive Playwright passed 14/14. The deployed health identity
+  and local/live core artifact hashes exactly match candidate `f937e4b`.
+- Live limits produced 44 accepted reads before 429 responses and 8 processed
+  writes before 429 responses; both returned `Retry-After: 1`. The Sociobot
+  license-check route produced 30 accepted checks before 429 responses with
+  `Retry-After: 4`.
+- Privacy request logging remained same-origin until the explicit Microsoft
+  sign-in action. The configured sign-in reached only the required
+  `sociobotcustomers.ciamlogin.com` tenant authority.
+- Security headers, immutable hashed-asset caching, service-worker update,
+  offline sample reload, keyboard use, 390 px layout, reduced motion, and
+  serious/critical axe checks passed.
+- Live mobile Lighthouse scored 100/100/100/100; LCP 1.4 s, TBT 20 ms, CLS 0,
+  and 95 KiB transferred.
+- A fresh release runtime started with only `PORT` and process `PATH`, created
+  its mode-0600 setup file and SQLite database, and preserved the setup file
+  across restart. A 100-request live health check returned 100 HTTP 200
+  responses with the exact candidate identity.
+
+## Required next steps
+
+1. Enable the Sociobot checkout and make the claim test confirm its actual
+   result.
+2. Reject whitespace-only aliases in the sample and add a recovery test.
+3. Set the demo-specific document title and rerun the full verification.
+
+---
+
 # Math Circle Board — repair 5 handoff
 
 **Date:** 2026-09-01
