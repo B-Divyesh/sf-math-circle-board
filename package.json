@@ -10,7 +10,7 @@
     "test": "npm run typecheck && vitest run && cargo test",
     "test:e2e": "bash scripts/run-e2e.sh",
     "test:claims": "bash scripts/run-e2e.sh",
-    "test:cold-claim": "bash scripts/test-cold-claim.sh",
+    "test:cold-claims": "bash scripts/test-cold-claims.sh",
     "preview": "vite preview --host 0.0.0.0"
   },
   "devDependencies": {

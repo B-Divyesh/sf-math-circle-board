@@ -36,12 +36,12 @@ npm test
 npm run build
 cargo build --release
 npm run test:e2e
-npm run test:cold-claim
+npm run test:cold-claims
 ```
 
 `npm run test:e2e` builds the frontend, starts an isolated test server and SQLite directory, runs Playwright 1.58.2, then removes the test data. `npm run test:claims -- --grep "@claim:demo-isolation"` runs one manifest claim from a clean server.
 
-`npm run test:cold-claim` clones the committed checkout, installs dependencies, creates an empty Cargo target, and runs the first declared claim. This covers first-run backend compilation separately from the bounded server-start deadline.
+`npm run test:cold-claims` clones the committed checkout, installs dependencies, creates an empty Cargo target, and runs every declared claim command. This covers first-run backend compilation separately from the bounded server-start deadline.
 
 The browser suite covers desktop and 390 px layouts, keyboard routing and focus, axe checks, legal status codes, a designed 404, offline reload, privacy, rate limits, full-board deletion, and the sample workflow. Every public claim and its clean-clone command are listed in [`.factory/claims.json`](.factory/claims.json).
 

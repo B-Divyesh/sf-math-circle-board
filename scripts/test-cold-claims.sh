@@ -21,8 +21,19 @@ fi
 git clone --quiet --no-local "$repo_dir" "$cold_repo"
 npm --prefix "$cold_repo" ci
 
-printf 'Running the first declared claim with an empty Cargo target...\n'
-timeout "$test_timeout" env \
-  CARGO_TARGET_DIR="$cold_target" \
-  MCB_TEST_PORT="$test_port" \
-  npm --prefix "$cold_repo" run test:claims -- --grep @claim:demo-isolation
+mapfile -t claim_commands < <(
+  cd "$cold_repo"
+  node --input-type=module -e \
+    "import {readFileSync} from 'node:fs'; for (const claim of JSON.parse(readFileSync('.factory/claims.json','utf8'))) console.log(claim.test)"
+)
+
+for claim_command in "${claim_commands[@]}"; do
+  printf 'Cold-clone claim: %s\n' "$claim_command"
+  (
+    cd "$cold_repo"
+    timeout "$test_timeout" env \
+      CARGO_TARGET_DIR="$cold_target" \
+      MCB_TEST_PORT="$test_port" \
+      bash -c "$claim_command"
+  )
+done
