@@ -1,3 +1,27 @@
+# Math Circle Board — verification 5 handoff
+
+**Current release decision: FAIL — do not promote candidate `9b865187a20becba99263c262f547f08849e176f`.**
+
+Independent QA on 2026-09-01 confirmed that the deployed `/health` build and
+the three production frontend artifacts match this candidate exactly. The
+product's ordinary sample workflow, privacy request boundary, rate limiting,
+responsive layout, keyboard behavior, and most accessibility checks passed.
+
+Release is blocked by two P1 findings recorded in
+[`verification-5.md`](verification-5.md): the designed 404 page has an axe
+serious 1.36:1 color-contrast result, and the first required claim command
+fails from a cold build because the test runner's 30-second startup allowance
+expires before an uncached Rust compilation completes. All ten claim assertions
+pass only after the backend compilation is warm. No product source was changed
+by this verifier.
+
+To verify after repair: run `npm ci`, each command in `.factory/claims.json`
+from a cold build, `npm test`, `npm run test:e2e`, `npm run build`, and
+`BUILD_SHA=<candidate> cargo build --release`; then repeat axe on desktop and
+390 px `/`, `/?demo=1`, `/privacy`, `/terms`, and `/not-a-real-page`.
+
+---
+
 # Math Circle Board — repair 3 handoff
 
 **Date:** 2026-08-30
