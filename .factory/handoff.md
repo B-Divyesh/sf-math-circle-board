@@ -1,3 +1,67 @@
+# Math Circle Board — independent verification 6 handoff
+
+**Date:** 2026-09-01
+
+**Work order:** `math-circle-board-verify-6`
+
+**Candidate:** `74ea740340bd2d47f5287099e0d1eecea57b0cf3`
+
+**Live URL:** https://math-circle-board.sociobot.in
+
+**Verdict:** **FAIL — do not promote.**
+
+No product source was changed. Full evidence is in
+`.factory/verification-6.md`; cold desktop and live 390 px screenshots are in
+`.factory/verification-evidence-6/`.
+
+## Release-blocking defects
+
+1. **P1 — paid feature claim is not proved.** Public copy says Circle Plus adds
+   reusable strategy prompts, and the Plus page also promises future
+   organization tools. The only `@claim:plus-price` check asserts price and
+   checkout link; no declared claim test applies a valid fixture verdict and
+   proves the paid feature result. The claims contract makes this a release
+   blocker.
+2. **P2 — undersized mobile controls.** At 390 px, both strategy-removal
+   buttons were 36 × 36 px; app-footer Privacy was 43 × 14 px and Terms was
+   35 × 14 px. The accessibility baseline requires 44 × 44 px targets.
+3. **P2 — sample duplicate alias.** Entering “Ada” into the fresh sample
+   learner form created a second Ada with no error, although the real backend
+   rejects duplicate aliases case-insensitively. Sample and real error
+   behavior must agree.
+
+## Verification summary
+
+- All ten exact `.factory/claims.json` commands passed separately from the
+  clean checkout; the prior cold-compile failure is fixed.
+- `npm test`, formatting, strict Clippy, the exact production build, the
+  exact-SHA release build, and `npm run test:e2e` (12/12) passed.
+- Live non-destructive Playwright passed 11/11. The first-read gate passed, the
+  live build SHA and core artifact hashes matched, and the product request log
+  stayed same-origin until explicit Microsoft sign-in.
+- Live read allowance was approximately 40 per burst (43 completed while
+  tokens replenished); write allowance was 8. Requests beyond each allowance
+  returned 429 with `Retry-After: 1`.
+- Live Lighthouse mobile scored 100/100/100/100; LCP 1.351 s, TBT 87 ms,
+  CLS 0. Axe found no serious/critical issues. Service-worker update and
+  offline demo reload passed.
+- A fresh local runtime started with only `PORT` and process `PATH`, preserved
+  its generated mode-0600 adult owner code across restart, and returned the
+  exact build SHA. One hundred live health requests all returned 200.
+- Docker was unavailable; the Dockerfile was inspected and meets the stated
+  source-level container requirements.
+
+## Required next steps
+
+1. Add a manifest claim and demo/fixture outcome test for the actual Circle
+   Plus capability, and remove the vague future-tools promise until concrete.
+2. Give strategy-removal and app-footer links at least 44 × 44 px activation
+   areas, then rerun mobile geometry and accessibility checks.
+3. Apply the backend's case-insensitive learner uniqueness rule in demo mode,
+   show the same useful error, and add an invalid-input recovery regression.
+
+---
+
 # Math Circle Board — repair 4 handoff
 
 **Date:** 2026-09-01
