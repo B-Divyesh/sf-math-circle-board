@@ -1,46 +1,59 @@
-# Math Circle Board — polish 1 handoff
+# Math Circle Board — verification 10 handoff
 
-**Work order:** `math-circle-board-polish-1`
+**Work order:** `math-circle-board-verify-10`
+
+**Candidate:** `eeeeeef2519a0a98aa49611dbf8774ba2d69caba`
+
+**Live URL:** <https://math-circle-board.sociobot.in>
+
 **Date:** 2 September 2026
-**Result:** PASS — every review 1 and controller finding is resolved.
 
-## Shipped
+**Result:** **FAIL**
 
-- Replaced the landing slogan with the informative heading **Data kept on the board**.
-- Split the long README test sentence and replaced “manifest claim” with a plain explanation.
-- Removed the public provenance claim. Asset provenance remains in `.factory/design.md`.
-- Added a verb-first, 85-character catalog description.
-- Added `npm run test:copy`. It protects the copy fixes, catalog limit, unique claim IDs, and one browser test per claim.
-- Kept the lantern-room identity, isolated demo storage, route titles, 404, legal pages, focus behavior, and mobile layout intact.
-- Updated `.factory/claims.json` so the catalog capabilities point to their observable tests.
+Independent QA confirmed that the deployed container identifies itself as the
+candidate and that the core product works. All 11 exact claim commands, the
+full local test suite, the release build, strict Rust lint, build identity, 19
+local browser tests, and 18 safe live browser tests passed.
 
-## Verification
+Release acceptance still fails on three defects:
 
-- `npm test`: PASS — TypeScript, copy contract, 3 Vitest tests, and 11 Rust tests.
-- `npm run build`: PASS — JS 14.38 + 67.30 KB gzip; CSS 6.28 KB gzip.
-- `npm run test:e2e`: PASS — 19/19 browser tests.
-- `npm run test:cold-claims`: PASS from a temporary clean clone. All 11 declared claim commands passed independently.
-- `npm run test:identity`: PASS — `/health` returned implementation SHA `d158859ed0ff97adb8f6b59c73a0f3a38740a6a6` from the local container.
-- Mobile Lighthouse: 99 performance, 100 accessibility, 100 best practices, 100 SEO; LCP 1.8 s, CLS 0, TBT 20 ms.
-- Fleet deployment: PASS with durable `/data`, one replica, and image `sf-math-circle-board:d158859ed0ff`.
-- Cold live checks: root and `/?demo=1` returned 200 with no console errors. Titles, `lang`, one h1, main landmark, and alt coverage passed.
-- Live Playwright: 8/8 public, demo, offline, privacy, route, focus, 404, and mobile regressions passed.
-- Live health returned `{ "build": "d158859ed0ff97adb8f6b59c73a0f3a38740a6a6", "ok": true }` for the reviewed production revision.
+1. **High:** landing/README claims are missing or incompletely represented in
+   `.factory/claims.json`, including the 6–12 learner range, full sample counts,
+   first-boot/runtime storage behavior, and container/runtime assertions.
+2. **High:** three actual-throttling mobile Lighthouse runs measured LCP at
+   2.696 s, 2.532 s, and 2.663 s, all above the `< 2.5 s` budget. The h1 waits
+   on the initial JavaScript/API chain.
+3. **Medium:** at 390 px the app navigation is 410 px wide inside a 374 px
+   viewport and clips about 36 px of the Settings destination.
 
-## Run and verify
+The cold first-read gate passed. The first screen names the facilitator, job,
+and first action, and one click opens an isolated sample. Live privacy,
+same-origin requests, secure headers, Microsoft CIAM authority, offline reload,
+service-worker update, keyboard focus, axe, 404/legal routes, recap privacy,
+export, invalid-input recovery, immutable asset caching, and API throttling all
+passed. Observed live allowance: 43/100 reads passed before/refilling around the
+40-request burst and 8/30 writes reached validation; the rest returned 429 with
+`Retry-After: 1`.
+
+Detailed commands, evidence, and remediation are in
+[`.factory/verification-10.md`](verification-10.md). Evidence is in
+`.factory/verification-evidence-10/`.
+
+## Reproduce
 
 ```sh
 npm ci
 npm test
 npm run build
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo build --release
 npm run test:e2e
-npm run test:cold-claims
 npm run test:identity
+PLAYWRIGHT_BASE_URL=https://math-circle-board.sociobot.in \
+  npx playwright test --workers=1 --grep-invert '@claim:full-delete'
 ```
 
-Live product: <https://math-circle-board.sociobot.in>
-Direct sample: <https://math-circle-board.sociobot.in/?demo=1>
-
-## Known gaps and next steps
-
-No review finding or required acceptance item remains. No follow-up is required for this polish round.
+No product code, deployment, DNS, billing, or cloud resource was modified by
+this verification. Only this report, handoff, and verification evidence were
+added.
