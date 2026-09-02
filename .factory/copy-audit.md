@@ -25,7 +25,7 @@ word. No line exceeds 22 words, and no line uses a banned marketing word.
 | Add prompts in the order you plan to discuss them. | 10 |
 | Save partial ideas, strategy tags, and a private facilitator note. | 10 |
 | Make a session record that leaves private notes out. | 9 |
-| Keep only the record you need | 6 |
+| Data kept on the board | 5 |
 | Use aliases instead of learner emails. | 6 |
 | The board is not a gradebook, chat service, or public learner profile. | 12 |
 | Read the privacy details | 4 |
@@ -33,6 +33,16 @@ word. No line exceeds 22 words, and no line uses a banned marketing word.
 | It has no paid plan, checkout, organization controls, or extra storage tier. | 12 |
 | Use four free strategy prompts | 5 |
 | Plan and record small math-circle sessions. | 6 |
+| Privacy | 1 |
+| Terms | 1 |
+| Built by Param Factory | 4 |
+| v0.1.0 | 1 |
+
+## README corrections
+
+The review’s flagged test sentence is now two sentences of 16 and 11 words.
+The demo-isolation command now says “named demo-isolation check” instead of
+“manifest claim.” No README sentence exceeds the 22-word limit.
 
 ## Terminology
 

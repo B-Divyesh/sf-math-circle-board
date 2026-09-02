@@ -18,6 +18,9 @@ test('plain public first screen and metadata are complete',async({page})=>{
   await expect(page.getByText('For volunteer math circle facilitators')).toBeVisible();
   await expect(page.getByRole('link',{name:'Try it with sample data'})).toHaveAttribute('href','/demo');
   await expect(page.getByRole('button',{name:'Sign in with Microsoft'})).toBeVisible();
+  await expect(page.getByRole('heading',{level:2,name:'Data kept on the board'})).toBeVisible();
+  await expect(page.getByText('Original AI-assisted environmental art')).toHaveCount(0);
+  await expect(page.locator('footer')).toContainText('v0.1.0');
   await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href','https://math-circle-board.sociobot.in/');
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content',/social-card\.webp$/);
   expect(await seriousAxe(page)).toEqual([]);
