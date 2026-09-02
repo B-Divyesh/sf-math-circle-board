@@ -2,6 +2,7 @@
 
 - **Work order:** `math-circle-board-polish-2`
 - **Repair commit:** `187a3ba61b9b92d29c676c62469111ed694b9c13`
+- **Deployed source:** `6b669f7f859dcba703d690761247ea70fa984e2f`
 - **Live URL:** <https://math-circle-board.sociobot.in>
 - **Result:** PASS — no review finding remains.
 
@@ -45,6 +46,9 @@ in `.factory/polish-2.md`.
   clone.
 - `verify-url.sh` passed locally for root and demo with no console errors and
   complete title/lang/main/alt/button checks.
+- Live root and demo passed the same `verify-url.sh` check. A fresh live
+  Playwright run passed the public first-screen and demo-isolation tests 2/2.
+  See `.factory/polish-evidence-2/live/` and `live-demo/`.
 
 ## Known gaps
 

@@ -39,5 +39,16 @@ deployment verification.
 ## Live cold recheck
 
 After deployment, a new browser context loaded the live root and `/demo`.
-The deployment verification and live screenshots are in
-`.factory/polish-evidence-2/live/`.
+`verify-url.sh` found no console errors on either route and verified the
+route-specific title, `lang`, one h1, main landmark, image alt text, and named
+buttons. The live build identity is
+`6b669f7f859dcba703d690761247ea70fa984e2f`.
+
+- `PLAYWRIGHT_BASE_URL=https://math-circle-board.sociobot.in npx playwright
+  test --workers=1 --grep 'plain public first screen|@claim:demo-isolation'`
+  passed 2/2 from fresh live contexts.
+- Live [root report](polish-evidence-2/live/verify.json), [root mobile
+  screenshot](polish-evidence-2/live/screenshot-mobile.png), [demo report]
+  (polish-evidence-2/live-demo/verify.json), and [demo mobile screenshot]
+  (polish-evidence-2/live-demo/screenshot-mobile.png) show the working first
+  screen, one-click sample board, and persistent demo controls.
