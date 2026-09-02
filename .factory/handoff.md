@@ -1,3 +1,73 @@
+# Math Circle Board — independent verification 8 handoff
+
+**Date:** 2026-09-02
+
+**Work order:** `math-circle-board-verify-8`
+
+**Candidate:** `fa1533decca47ca96b3539dc05982c82c91f1bf7`
+
+**Live URL:** https://math-circle-board.sociobot.in
+
+**Verdict:** **FAIL — do not promote.**
+
+No product source was changed. Full evidence is in
+`.factory/verification-8.md`; screenshots and the one-page recap PDF are in
+`.factory/verification-evidence-8/`.
+
+## Release result
+
+- **P1:** Live `/health` reports
+  `e66905481a1360ac8d0f73d742cace4af8adce60`, not reviewed candidate
+  `fa1533decca47ca96b3539dc05982c82c91f1bf7`. All 100 concurrent health
+  responses returned the same non-candidate identity. Core frontend artifacts
+  match byte-for-byte and the commits differ only in this handoff file, but
+  the required exact build identity does not match.
+- **P2:** At 390 px, the public nav is 425 px wide inside a 374 px scroller;
+  most of **Privacy** is clipped on first paint.
+- **P2:** `/demo` and `/?demo=1` publish `/board` as canonical, although that
+  URL without demo mode is the real signed-out/private path.
+- **P2:** Demo uploads trust the declared MIME type. Corrupt bytes presented
+  as `image/png` produce a success toast and broken saved image, unlike the
+  byte-validating backend.
+- **P2:** The researched freemium organization tier is still unavailable;
+  only four sample strategy prompts are previewed.
+
+## Verification summary
+
+- Cold first-read and one-click sample gates passed.
+- All 11 exact claim commands passed individually after the locked install;
+  `npm run test:cold-claims` passed all 11 again from a fresh clone and empty
+  Cargo target.
+- `npm test`, formatting, strict Clippy, the exact production build, the
+  exact-SHA release build, and local Playwright 17/17 passed.
+- Live non-destructive Playwright passed 16/16. Full board deletion remained
+  confined to disposable local SQLite.
+- Live limits produced 44 accepted reads before 429 responses and exactly 8
+  processed writes before 429 responses; both sent `Retry-After: 1`. The
+  Sociobot license verifier allowed 30 checks before 429 with `Retry-After: 4`.
+- Privacy logging stayed same-origin until explicit Microsoft sign-in. Sign-in
+  reached only the required `sociobotcustomers.ciamlogin.com` tenant.
+- HSTS, CSP, immutable hashed-asset caching, service-worker update, offline
+  sample reload, keyboard use, visible focus, reduced motion, 44 px app
+  targets, and serious/critical axe checks passed.
+- Live mobile Lighthouse scored 100/100/100/100; LCP 1.5 s, TBT 70 ms, CLS 0,
+  and 73 KiB transferred.
+- A fresh candidate runtime started with only `PORT` and process `PATH`,
+  created its mode-0600 owner code and SQLite database, and preserved both
+  across restart.
+- Docker is unavailable in this worker; the Dockerfile passed source
+  inspection. No real Microsoft credentials, production board deletion, or
+  payment was attempted.
+
+## Required next steps
+
+1. Deploy the exact reviewed candidate and confirm `/health` returns its SHA.
+2. Fix the clipped mobile public nav and the demo canonical URL.
+3. Make demo upload validation reject corrupt image bytes like the backend.
+4. Ship the researched paid organization tier or document the scope deviation.
+
+---
+
 # Math Circle Board — repair 6 handoff
 
 **Date:** 2026-09-01
