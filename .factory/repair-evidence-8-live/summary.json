@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-02",
+  "url": "https://math-circle-board.sociobot.in",
+  "build": "3e7395a78226af7e1776dd10d3bfcb3d1ab900b5",
+  "health": {"ok": true, "buildMatches": true},
+  "browser": {"nonDestructiveTestsPassed": 25, "workerVerifyErrors": 0},
+  "mobileNavigation": {
+    "viewportWidth": 390,
+    "clientWidth": 374,
+    "scrollWidth": 374,
+    "destinations": ["Board", "Learners", "Strategies", "Settings"],
+    "linkWidth": 90.5,
+    "linkHeight": 44
+  },
+  "lighthouse": {
+    "version": "12.8.2",
+    "profile": "390x844, DevTools throttling, 4x CPU slowdown",
+    "runs": [
+      {"performance": 99, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcpMs": 1768, "cls": 0, "tbtMs": 0},
+      {"performance": 99, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcpMs": 1743, "cls": 0, "tbtMs": 0},
+      {"performance": 99, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcpMs": 1731, "cls": 0, "tbtMs": 0}
+    ],
+    "medianLcpMs": 1743,
+    "budgetLcpMs": 2500
+  },
+  "responsePolicy": {
+    "hsts": "max-age=63072000; includeSubDomains",
+    "cspFrameAncestors": "'none'",
+    "hashedAssetCacheControl": "public, max-age=31536000, immutable"
+  }
+}

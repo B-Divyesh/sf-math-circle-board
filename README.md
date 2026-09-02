@@ -2,6 +2,8 @@
 
 Plan and record small math-circle sessions. The board is for volunteer facilitators working with private groups of 6–12 learners.
 
+Each board accepts up to 12 learner aliases.
+
 Facilitators can sequence open problems, record partial attempts and strategy tags, keep private notes, and print a recap. The roster uses learner aliases and does not ask for learner email addresses. The board is not a gradebook, chat service, or public learner profile.
 
 [Try the isolated sample board](https://math-circle-board.sociobot.in/demo). It works without an account, uses only `demo:` session-storage keys, and never calls the private board API. Reset restores the original two sessions, three learners, four problems, and four attempts.
@@ -37,6 +39,7 @@ npm run build
 cargo build --release
 npm run test:e2e
 npm run test:cold-claims
+npm run test:identity
 ```
 
 `npm run test:e2e` builds the frontend, starts an isolated test server and SQLite directory, runs Playwright 1.58.2, then removes the test data. `npm run test:claims -- --grep "@claim:demo-isolation"` runs the named demo-isolation check on a fresh local server.
