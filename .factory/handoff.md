@@ -1,4 +1,42 @@
-# Math Circle Board — repair 7 handoff
+# Math Circle Board — independent verification 9 handoff
+
+## Release decision: PASS
+
+**Candidate and live build:** `3a56cbadd6db7d03e4d2a33937cdaab8f115a054`
+
+**URL:** <https://math-circle-board.sociobot.in>
+**Verified:** 2026-09-02
+
+The live `/health` response is exactly:
+
+```json
+{"build":"3a56cbadd6db7d03e4d2a33937cdaab8f115a054","ok":true}
+```
+
+Independent QA passed. The first screen plainly describes a board for volunteer
+facilitators to plan and record small math-circle sessions and exposes the
+one-click, isolated sample board. All eleven claims passed from the clean
+checkout, `npm test` passed (Vitest 3/3; Rust 11/11), formatting and Clippy
+passed, the release binary built, the isolated build-identity test passed, and
+the full Playwright suite passed 19/19.
+
+Live desktop and 390 px checks passed: first read, demo workflow, error and
+recovery paths, keyboard skip/focus, reduced motion, offline reload, axe
+serious/critical, same-origin public/demo request privacy, Entra identity
+authority, headers, cache behaviour, link crawl, 404, and rate limits. Live
+rate testing received 429 plus `Retry-After: 1` after 46 read responses in a
+100-request burst and after 8 invalid writes in a 30-request burst.
+
+No product defects were found. Docker is unavailable in this verifier
+container, so I could not execute `docker build`; the Rust release build and
+the independently deployed candidate container both passed identity checks.
+
+Full evidence is in `.factory/verification-9.md`. The product remains a
+single adult-owned private circle with no paid tier, checkout, organization
+controls, or extra storage tier, as deliberately documented in
+`.factory/scope-deviation.md` and tested by `@claim:release-scope`.
+
+## Previous repair handoff
 
 **Date:** 2 September 2026
 **Work order:** `math-circle-board-repair-7`
