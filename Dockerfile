@@ -1,6 +1,6 @@
 FROM node:22-alpine AS web
 WORKDIR /app
-COPY package.json package-lock.json* tsconfig.json vite.config.ts index.html ./
+COPY package.json package-lock.json* tsconfig.json vite.config.ts index.html app.html ./
 COPY frontend ./frontend
 RUN npm ci --ignore-scripts && npm run build
 

@@ -1,0 +1,21 @@
+{
+  "date": "2026-09-02",
+  "url": "http://127.0.0.1:18090/",
+  "lighthouse": "12.8.2",
+  "profile": {
+    "formFactor": "mobile",
+    "viewport": "390x844",
+    "throttlingMethod": "devtools",
+    "rttMs": 150,
+    "downloadThroughputKbps": 1474.56,
+    "uploadThroughputKbps": 675,
+    "cpuSlowdownMultiplier": 4
+  },
+  "runs": [
+    {"performance": 99, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcpMs": 1725, "cls": 0, "tbtMs": 0},
+    {"performance": 99, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcpMs": 1755, "cls": 0, "tbtMs": 0},
+    {"performance": 99, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcpMs": 1736, "cls": 0, "tbtMs": 0}
+  ],
+  "medianLcpMs": 1736,
+  "budgetLcpMs": 2500
+}

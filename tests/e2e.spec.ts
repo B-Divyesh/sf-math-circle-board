@@ -1,5 +1,9 @@
 import {test,expect,type Page} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import {spawn} from 'node:child_process';
+import {existsSync,mkdtempSync,readFileSync,rmSync,statSync,symlinkSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
 
 test.describe.configure({mode:'serial'});
 const ownerCode=process.env.MCB_TEST_OWNER_CODE||'adult-setup-code-0123456789';
@@ -27,6 +31,47 @@ test('plain public first screen and metadata are complete',async({page})=>{
   expect(errors).toEqual([]);
 });
 
+test('390 px landing headline renders without JavaScript or the status API',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},javaScriptEnabled:false});
+  const page=await context.newPage();
+  const response=await page.goto('/');
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole('heading',{level:1})).toHaveText('Plan and record small math-circle sessions');
+  await expect(page.getByRole('link',{name:'Try it with sample data'})).toBeVisible();
+  expect(await page.locator('h1').count()).toBe(1);
+  await context.close();
+});
+
+test('390 px DevTools-throttled landing LCP stays below 2.5 seconds',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844}});
+  await context.addInitScript(()=>{
+    (window as unknown as {mcbLcp?:number,mcbLcpText?:string}).mcbLcp=0;
+    new PerformanceObserver(list=>{
+      const entry=list.getEntries().at(-1) as PerformanceEntry&{element?:Element};
+      const metrics=window as unknown as {mcbLcp?:number,mcbLcpText?:string};
+      metrics.mcbLcp=entry.startTime;
+      metrics.mcbLcpText=entry.element?.textContent?.trim();
+    }).observe({type:'largest-contentful-paint',buffered:true});
+  });
+  const page=await context.newPage();
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:562.5,downloadThroughput:1474.56*1024/8,uploadThroughput:675*1024/8,connectionType:'cellular3g'});
+  await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
+  await page.goto('/',{waitUntil:'load'});
+  await page.waitForTimeout(1000);
+  const metric=await page.evaluate(()=>({
+    lcp:(window as unknown as {mcbLcp?:number}).mcbLcp||0,
+    text:(window as unknown as {mcbLcpText?:string}).mcbLcpText||'',
+    width:innerWidth,
+  }));
+  expect(metric.width).toBe(390);
+  expect(metric.text).toContain('Plan and record small math-circle sessions');
+  expect(metric.lcp).toBeGreaterThan(0);
+  expect(metric.lcp).toBeLessThan(2500);
+  await context.close();
+});
+
 test('@claim:demo-isolation sample mode is isolated and resettable',async({page})=>{
   const requests:string[]=[];
   page.on('request',request=>requests.push(request.url()));
@@ -45,6 +90,35 @@ test('@claim:demo-isolation sample mode is isolated and resettable',async({page}
   await expect(page.getByText('Ravi',{exact:true})).toHaveCount(0);
   expect(requests.some(url=>new URL(url).pathname.startsWith('/api/'))).toBeFalsy();
   await expect(page.getByRole('link',{name:'Start for real'})).toHaveAttribute('href','/');
+});
+
+test('@claim:sample-counts reset restores two sessions, three learners, four problems, and four attempts',async({page})=>{
+  await page.goto('/learners?demo=1');
+  await page.getByLabel('Learner alias').fill('Ravi');
+  await page.getByRole('button',{name:'Add learner'}).click();
+  await expect(page.locator('.learner-list > li')).toHaveCount(4);
+  await page.getByRole('button',{name:'Reset demo'}).click();
+  const counts=await page.evaluate(()=>{
+    const sample=JSON.parse(sessionStorage.getItem('demo:math-circle-board:board')||'{}');
+    return {sessions:sample.sessions?.length,learners:sample.learners?.length,problems:sample.problems?.length,attempts:sample.attempts?.length};
+  });
+  expect(counts).toEqual({sessions:2,learners:3,problems:4,attempts:4});
+  await expect(page.locator('.learner-list > li')).toHaveCount(3);
+});
+
+test('@claim:learner-range the board supports a private group of up to 12 learners',async({page})=>{
+  await page.goto('/');
+  await expect(page.getByText(/recap for 6–12 learners/)).toBeVisible();
+  await page.goto('/learners?demo=1');
+  for(let learner=4;learner<=12;learner++){
+    await page.getByLabel('Learner alias').fill(`Learner ${learner}`);
+    await page.getByRole('button',{name:'Add learner'}).click();
+  }
+  await expect(page.locator('.learner-list > li')).toHaveCount(12);
+  await page.getByLabel('Learner alias').fill('Learner 13');
+  await page.getByRole('button',{name:'Add learner'}).click();
+  await expect(page.locator('.add-learner .form-error')).toHaveText('A private circle can have up to 12 learner aliases.');
+  await expect(page.locator('.learner-list > li')).toHaveCount(12);
 });
 
 test('demo rejects learner aliases case-insensitively like the backend',async({page})=>{
@@ -161,7 +235,7 @@ test('@claim:no-tracking landing and demo make no third-party requests',async({p
   expect([...origins]).toEqual([new URL(page.url()).origin]);
 });
 
-test('@claim:owner-access private board API requires the signed-in owner',async({page})=>{
+test('@claim:owner-access private board API requires the signed-in Microsoft owner',async({page})=>{
   const response=await page.request.get('/api/board',{headers:{'x-forwarded-for':'198.51.100.81'}});
   expect(response.status()).toBe(401);
   expect(response.headers()['www-authenticate']).toContain('Bearer');
@@ -172,6 +246,72 @@ test('@claim:owner-access private board API requires the signed-in owner',async(
   await page.getByRole('link',{name:'Learners'}).click();
   await expect(page.getByLabel('Learner alias')).toBeVisible();
   await expect(page.locator('input[type=email]')).toHaveCount(0);
+});
+
+test('@claim:first-boot-runtime starts with only PORT and creates the documented local storage',async()=>{
+  const workDir=mkdtempSync(join(tmpdir(),'mcb-runtime-'));
+  const port='18084';
+  const binary=process.env.MCB_TEST_BACKEND_BIN||resolve('target/debug/math-circle-board');
+  symlinkSync(resolve('dist'),join(workDir,'dist'),'dir');
+  let logs='';
+  const server=spawn(binary,[],{cwd:workDir,env:{PATH:process.env.PATH||'',PORT:port},stdio:['ignore','pipe','pipe']});
+  server.stdout.on('data',chunk=>{logs+=String(chunk)});
+  server.stderr.on('data',chunk=>{logs+=String(chunk)});
+  try{
+    await expect.poll(async()=>{try{return (await fetch(`http://127.0.0.1:${port}/health`)).ok}catch{return false}},{timeout:20_000}).toBe(true);
+    const health=await fetch(`http://127.0.0.1:${port}/health`).then(response=>response.json()) as {ok:boolean,build:string};
+    expect(health.ok).toBe(true);
+    expect(health.build.length).toBeGreaterThan(0);
+    expect(statSync(join(workDir,'data','board.db')).size).toBeGreaterThan(0);
+    expect(statSync(join(workDir,'data','uploads')).isDirectory()).toBe(true);
+    const ownerCode=readFileSync(join(workDir,'data','owner-invite.txt'),'utf8').trim();
+    expect(ownerCode).toMatch(/^[a-f0-9]{48}$/);
+    expect(statSync(join(workDir,'data','owner-invite.txt')).mode&0o777).toBe(0o600);
+    expect(logs).toContain('sociobotcustomers.ciamlogin.com');
+  }finally{
+    server.kill('SIGTERM');
+    await new Promise(resolveExit=>server.once('exit',resolveExit));
+    rmSync(workDir,{recursive:true,force:true});
+  }
+  const overrideDir=mkdtempSync(join(tmpdir(),'mcb-runtime-overrides-'));
+  const overrideData=join(overrideDir,'kept-data');
+  const overridePort='18085';
+  let overrideLogs='';
+  const overrideServer=spawn(binary,[],{cwd:overrideDir,env:{
+    PATH:process.env.PATH||'',PORT:overridePort,DATA_DIR:overrideData,DIST_DIR:resolve('dist'),
+    MCB_OWNER_INVITE:'adult-override-code-0123456789',ENTRA_TENANT_ID:'test-tenant',
+    ENTRA_TENANT_SUBDOMAIN:'test-authority',ENTRA_CLIENT_ID:'test-client',
+  },stdio:['ignore','pipe','pipe']});
+  overrideServer.stdout.on('data',chunk=>{overrideLogs+=String(chunk)});
+  overrideServer.stderr.on('data',chunk=>{overrideLogs+=String(chunk)});
+  try{
+    await expect.poll(async()=>{try{return (await fetch(`http://127.0.0.1:${overridePort}/health`)).ok}catch{return false}},{timeout:20_000}).toBe(true);
+    expect(statSync(join(overrideData,'board.db')).size).toBeGreaterThan(0);
+    expect(statSync(join(overrideData,'uploads')).isDirectory()).toBe(true);
+    expect(existsSync(join(overrideData,'owner-invite.txt'))).toBe(false);
+    expect(overrideLogs).toContain('test-authority.ciamlogin.com');
+    expect(overrideLogs).toContain('test-client');
+    expect(overrideLogs).toContain('owner_invite_supplied');
+  }finally{
+    overrideServer.kill('SIGTERM');
+    await new Promise(resolveExit=>overrideServer.once('exit',resolveExit));
+    rmSync(overrideDir,{recursive:true,force:true});
+  }
+});
+
+test('@claim:container-runtime container recipe preserves runtime identity and storage contracts',async({request})=>{
+  const dockerfile=readFileSync('Dockerfile','utf8');
+  expect(dockerfile).toMatch(/^FROM node:22-alpine AS web/m);
+  expect(dockerfile).toMatch(/^FROM rust:1-alpine AS server/m);
+  expect(dockerfile).toContain('ARG BUILD_SHA=unknown');
+  expect(dockerfile).toContain('ENV DATA_DIR=/data DIST_DIR=/app/dist');
+  expect(dockerfile).toContain('USER app');
+  expect(dockerfile).toContain('EXPOSE 8080');
+  expect(dockerfile).toContain('VOLUME ["/data"]');
+  expect(dockerfile).not.toContain('COPY .git');
+  const health=await request.get('/health');
+  expect(health.status()).toBe(200);
+  expect(await health.json()).toMatchObject({ok:true,build:expect.any(String)});
 });
 
 test('@claim:rate-limits read and write bursts return 429 with Retry-After',async({request})=>{
@@ -263,6 +403,25 @@ test('390 px public navigation shows every destination without horizontal clippi
   for(const link of measurements){
     expect(link.left,`${link.label} starts outside the viewport`).toBeGreaterThanOrEqual(0);
     expect(link.right,`${link.label} clips outside the viewport`).toBeLessThanOrEqual(390);
+    expect(link.width,`${link.label} is too narrow`).toBeGreaterThanOrEqual(44);
+    expect(link.height,`${link.label} is too short`).toBeGreaterThanOrEqual(44);
+  }
+  await context.close();
+});
+
+test('390 px app navigation shows every destination inside its 374 px content width',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844}});
+  const page=await context.newPage();
+  await page.goto('/?demo=1');
+  const nav=page.getByRole('navigation',{name:'Main navigation'});
+  const navBox=await nav.evaluate(element=>{const rect=element.getBoundingClientRect();return {clientWidth:element.clientWidth,scrollWidth:element.scrollWidth,left:rect.left,right:rect.right}});
+  expect(navBox.clientWidth).toBe(374);
+  expect(navBox.scrollWidth).toBeLessThanOrEqual(navBox.clientWidth);
+  const measurements=await nav.locator('a').evaluateAll(links=>links.map(link=>{const rect=link.getBoundingClientRect();return {label:link.textContent?.trim(),left:rect.left,right:rect.right,width:rect.width,height:rect.height}}));
+  expect(measurements.map(link=>link.label)).toEqual(['Board','Learners','Strategies','Settings']);
+  for(const link of measurements){
+    expect(link.left,`${link.label} starts outside the navigation`).toBeGreaterThanOrEqual(navBox.left);
+    expect(link.right,`${link.label} clips outside the navigation`).toBeLessThanOrEqual(navBox.right);
     expect(link.width,`${link.label} is too narrow`).toBeGreaterThanOrEqual(44);
     expect(link.height,`${link.label} is too short`).toBeGreaterThanOrEqual(44);
   }

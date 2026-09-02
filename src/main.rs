@@ -484,6 +484,16 @@ async fn add_learner(
             "Enter a learner alias of 60 characters or fewer.".into(),
         ));
     }
+    let learner_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM learners")
+        .fetch_one(&s.db)
+        .await
+        .map_err(db_err)?;
+    if learner_count >= 12 {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "A private circle can have up to 12 learner aliases.".into(),
+        ));
+    }
     let res = sqlx::query("INSERT INTO learners(alias,created_at) VALUES(?,?)")
         .bind(v.alias.trim())
         .bind(now())
@@ -494,6 +504,11 @@ async fn add_learner(
                 ApiError(
                     StatusCode::CONFLICT,
                     "That learner alias is already in the circle.".into(),
+                )
+            } else if e.to_string().contains("learner_limit") {
+                ApiError(
+                    StatusCode::CONFLICT,
+                    "A private circle can have up to 12 learner aliases.".into(),
                 )
             } else {
                 db_err(e)
@@ -889,7 +904,8 @@ async fn migrate(db: &SqlitePool) -> Result<(), sqlx::Error> {
         "CREATE TABLE IF NOT EXISTS circle_sessions(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,session_date TEXT NOT NULL,focus TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL)",
         "CREATE TABLE IF NOT EXISTS problems(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id INTEGER NOT NULL REFERENCES circle_sessions(id) ON DELETE CASCADE,position INTEGER NOT NULL,title TEXT NOT NULL,prompt TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY AUTOINCREMENT,learner_id INTEGER NOT NULL REFERENCES learners(id) ON DELETE CASCADE,problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'not_started',thinking TEXT NOT NULL DEFAULT '',strategies TEXT NOT NULL DEFAULT '[]',private_note TEXT NOT NULL DEFAULT '',updated_at INTEGER NOT NULL,UNIQUE(learner_id,problem_id))",
-        "CREATE TABLE IF NOT EXISTS attachments(id INTEGER PRIMARY KEY AUTOINCREMENT,attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,stored_name TEXT NOT NULL,original_name TEXT NOT NULL,mime TEXT NOT NULL,created_at INTEGER NOT NULL)"
+        "CREATE TABLE IF NOT EXISTS attachments(id INTEGER PRIMARY KEY AUTOINCREMENT,attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,stored_name TEXT NOT NULL,original_name TEXT NOT NULL,mime TEXT NOT NULL,created_at INTEGER NOT NULL)",
+        "CREATE TRIGGER IF NOT EXISTS learners_limit BEFORE INSERT ON learners WHEN (SELECT COUNT(*) FROM learners) >= 12 BEGIN SELECT RAISE(ABORT, 'learner_limit'); END"
     ] {sqlx::query(statement).execute(db).await?;}
     Ok(())
 }
@@ -906,7 +922,12 @@ async fn schema_is_current(db: &SqlitePool) -> Result<bool, sqlx::Error> {
         sqlx::query_as("PRAGMA table_info(settings)")
             .fetch_all(db)
             .await?;
-    Ok(columns.iter().any(|column| column.1 == "owner_oid"))
+    let learner_limit: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='learners_limit'",
+    )
+    .fetch_one(db)
+    .await?;
+    Ok(columns.iter().any(|column| column.1 == "owner_oid") && learner_limit == 1)
 }
 fn sqlite_is_locked(error: &sqlx::Error) -> bool {
     let message = error.to_string().to_ascii_lowercase();
@@ -1001,21 +1022,21 @@ fn app(state: Shared, dist: PathBuf) -> Router {
         .route("/files/{id}", delete(delete_file))
         .route_layer(GovernorLayer::new(write_config).error_handler(rate_limit_response));
     let api = read_api.merge(write_api).with_state(state);
-    let index = dist.join("index.html");
+    let app_shell = dist.join("app.html");
     Router::new()
         .route("/health", get(health))
         .nest("/api", api)
-        .route_service("/privacy", ServeFile::new(index.clone()))
-        .route_service("/terms", ServeFile::new(index.clone()))
-        .route_service("/demo", ServeFile::new(index.clone()))
-        .route_service("/board", ServeFile::new(index.clone()))
-        .route_service("/learners", ServeFile::new(index.clone()))
-        .route_service("/recap", ServeFile::new(index.clone()))
-        .route_service("/plus", ServeFile::new(index.clone()))
-        .route_service("/settings", ServeFile::new(index.clone()))
-        .route_service("/auth/callback", ServeFile::new(index.clone()))
+        .route_service("/privacy", ServeFile::new(app_shell.clone()))
+        .route_service("/terms", ServeFile::new(app_shell.clone()))
+        .route_service("/demo", ServeFile::new(app_shell.clone()))
+        .route_service("/board", ServeFile::new(app_shell.clone()))
+        .route_service("/learners", ServeFile::new(app_shell.clone()))
+        .route_service("/recap", ServeFile::new(app_shell.clone()))
+        .route_service("/plus", ServeFile::new(app_shell.clone()))
+        .route_service("/settings", ServeFile::new(app_shell.clone()))
+        .route_service("/auth/callback", ServeFile::new(app_shell.clone()))
         .fallback_service(
-            ServeDir::new(&dist).not_found_service(ServeFile::new(index)),
+            ServeDir::new(&dist).not_found_service(ServeFile::new(app_shell)),
         )
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(6 * 1024 * 1024))
@@ -1180,6 +1201,12 @@ mod tests {
         tokio::fs::write(dir.join("index.html"), "<!doctype html><title>test</title>")
             .await
             .unwrap();
+        tokio::fs::write(
+            dir.join("app.html"),
+            "<!doctype html><title>test app</title>",
+        )
+        .await
+        .unwrap();
         tokio::fs::write(dir.join("assets/app-abc123.js"), "console.log('cached')")
             .await
             .unwrap();
@@ -1511,6 +1538,44 @@ mod tests {
             std::os::unix::fs::PermissionsExt::mode(&permissions) & 0o777,
             0o600
         );
+    }
+
+    #[tokio::test]
+    async fn learner_roster_stops_at_twelve() {
+        let invite = "adult-setup-code-0123456789";
+        let (router, state, _) = test_app(invite).await;
+        let setup = router
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/setup",
+                Body::from(format!(r#"{{"facilitator":"Morgan","group_name":"Saturday Circle","owner_code":"{invite}","adult_confirmed":true}}"#)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(setup.status(), StatusCode::OK);
+        for number in 1..=12 {
+            sqlx::query("INSERT INTO learners(alias,created_at) VALUES(?,?)")
+                .bind(format!("Learner {number}"))
+                .bind(now())
+                .execute(&state.db)
+                .await
+                .unwrap();
+        }
+        let thirteenth = router
+            .oneshot(api_request(
+                "POST",
+                "/api/learners",
+                Body::from(r#"{"alias":"Learner 13"}"#),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(thirteenth.status(), StatusCode::CONFLICT);
+        let learners: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM learners")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(learners, 12);
     }
 
     #[tokio::test]

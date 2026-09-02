@@ -1,10 +1,24 @@
 [
   {
     "id": "demo-isolation",
-    "claim": "Sample mode uses only isolated demo storage, never calls the private board API, and reset restores the original sample.",
+    "claim": "Sample mode works without an account, uses only isolated demo storage, never calls the private board API, and resets cleanly.",
     "where": "landing action, demo banner, README, privacy",
     "test": "npm run test:claims -- --grep @claim:demo-isolation",
     "sandbox": "fresh browser context at /?demo=1; edit the roster; inspect storage and requests; reset"
+  },
+  {
+    "id": "sample-counts",
+    "claim": "Reset restores the shipped sample with exactly two sessions, three learners, four problems, and four attempts.",
+    "where": "README, demo documentation",
+    "test": "npm run test:claims -- --grep @claim:sample-counts",
+    "sandbox": "fresh demo; change the roster; reset; inspect the isolated sample record and visible roster"
+  },
+  {
+    "id": "learner-range",
+    "claim": "The board supports a private group of 6–12 learners and limits the roster to 12 aliases.",
+    "where": "landing first screen, README",
+    "test": "npm run test:claims -- --grep @claim:learner-range",
+    "sandbox": "fresh demo; verify the range copy; add aliases through the UI to 12; assert a thirteenth is rejected"
   },
   {
     "id": "attempt-record",
@@ -43,10 +57,24 @@
   },
   {
     "id": "owner-access",
-    "claim": "Private board data requires the signed-in owner, while learner records use aliases without email fields.",
+    "claim": "Private board data requires the signed-in Microsoft owner, while learner records use aliases without email fields.",
     "where": "landing facts, privacy, README",
     "test": "npm run test:claims -- --grep @claim:owner-access",
     "sandbox": "fresh server; request private API anonymously; inspect signed-out and sample roster forms"
+  },
+  {
+    "id": "first-boot-runtime",
+    "claim": "With only PORT supplied, first boot creates ./data/board.db, ./data/uploads, and a private 48-character adult setup code, using the documented Microsoft authority; documented environment overrides are honored.",
+    "where": "README run locally and optional configuration",
+    "test": "npm run test:claims -- --grep @claim:first-boot-runtime",
+    "sandbox": "fresh temporary working directory; launch the built server with an empty environment except PATH and PORT; inspect health, files, permissions, and startup log"
+  },
+  {
+    "id": "container-runtime",
+    "claim": "The container contract uses a non-root user, PORT 8080, /data persistence, and build identity returned by /health.",
+    "where": "README container deployment",
+    "test": "npm run test:claims -- --grep @claim:container-runtime",
+    "sandbox": "inspect the production Docker recipe and query /health on the isolated server started on its supplied PORT"
   },
   {
     "id": "rate-limits",

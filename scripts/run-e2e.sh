@@ -64,4 +64,5 @@ curl --silent --fail "http://127.0.0.1:$test_port/health" >/dev/null || {
 PLAYWRIGHT_BASE_URL="http://127.0.0.1:$test_port" \
 MCB_TEST_OWNER_CODE="adult-setup-code-0123456789" \
 MCB_TEST_AUTH_TOKEN="integration-test-entra-token" \
+MCB_TEST_BACKEND_BIN="$backend_bin" \
 npx playwright test --workers=1 "$@"

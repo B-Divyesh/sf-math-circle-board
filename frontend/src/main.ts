@@ -38,18 +38,30 @@ async function boot(){
   if(location.pathname==='/privacy'||location.pathname==='/terms'){renderLegal(location.pathname);return}
   if(location.pathname!=='/'&&location.pathname!=='/auth/callback'&&!appPaths.has(location.pathname)){renderNotFound();return}
   if(isDemoMode()){await loadBoard();return}
+  if(location.pathname==='/'&&app.querySelector('.landing'))bindGate();
   try{const status=await api<Status>('/status');status.authenticated?await loadBoard():renderGate(status)}catch(error){if(!navigator.onLine){if(!restoreOfflineBoard())renderConnectionError();return}if(error instanceof ApiFailure&&error.status===401)renderGate({configured:true,signed_in:false,authenticated:false});else renderConnectionError()}
 }
 
+function gateIdentity(status:Status){return status.signed_in&&!status.configured?`<form id="gate-form" class="gate-form"><p class="identity-note">Signed in with Microsoft. Finish the adult ownership check.</p><label>Facilitator name<input name="facilitator" autocomplete="name" maxlength="80" required></label><label>Circle name<input name="group_name" maxlength="100" value="Saturday problem circle" required></label><label>Adult setup code<input name="owner_code" autocomplete="off" minlength="24" required><small>The deployment operator gives this code to the responsible adult.</small></label><label class="adult-confirmation"><input name="adult_confirmed" type="checkbox" required> I am an adult responsible for this private group and will use learner aliases.</label><p id="form-error" class="form-error" role="alert"></p><button class="primary" type="submit">Create private board</button></form>`:`<div class="sign-in-row"><button id="entra-sign-in" class="secondary" type="button">Sign in with Microsoft</button><span>${status.configured?'Open the board owned by your account.':'Set up a board with the adult owner code.'}</span></div>`}
+function bindGate(){
+  document.querySelector('#entra-sign-in')?.addEventListener('click',()=>signIn());
+  document.querySelector<HTMLFormElement>('#gate-form')?.addEventListener('submit',async e=>{
+    e.preventDefault();const formElement=e.currentTarget as HTMLFormElement;const form=new FormData(formElement);const button=formElement.querySelector<HTMLButtonElement>('button')!;button.disabled=true;button.textContent='Creating…';
+    const data:Record<string,unknown>=Object.fromEntries(form);data.adult_confirmed=form.get('adult_confirmed')==='on';
+    try{await send('/setup',data);await loadBoard()}catch(err){showFormError(err)}finally{button.disabled=false;button.textContent='Create private board'}
+  });
+}
 function renderGate(status:Status){
   const description='Plan open problems, record learner attempts, keep private notes, and print recaps for a small math circle.';
   setPageMeta('Math Circle Board — Plan small math-circle sessions',description,'/');
+  const existingIdentity=location.pathname==='/'&&app.querySelector<HTMLElement>('.landing .identity-slot');
+  if(existingIdentity){existingIdentity.innerHTML=gateIdentity(status);bindGate();return}
   app.innerHTML=`<header class="public-header"><a class="wordmark" href="/" aria-label="Math Circle Board home"><span class="mark">∴</span> Math Circle Board</a><nav aria-label="Public navigation"><a href="/demo">Demo</a><a href="#preview">Product preview</a><a href="#how-it-works">How it works</a><a href="/privacy">Privacy</a></nav></header>
   <main id="main" class="landing" tabindex="-1">
     <section class="landing-hero">
       <div class="gate-copy"><p class="eyebrow">For volunteer math circle facilitators</p><h1>Plan and record small math-circle sessions</h1><p class="lede">Sequence open problems, record partial attempts, keep private notes, and print a recap for 6–12 learners.</p>
         <div class="landing-actions"><a class="primary button-link" href="/demo">Try it with sample data</a><span>See a filled board. Changes stay in this demo.</span></div>
-        ${status.signed_in&&!status.configured?`<form id="gate-form" class="gate-form"><p class="identity-note">Signed in with Microsoft. Finish the adult ownership check.</p><label>Facilitator name<input name="facilitator" autocomplete="name" maxlength="80" required></label><label>Circle name<input name="group_name" maxlength="100" value="Saturday problem circle" required></label><label>Adult setup code<input name="owner_code" autocomplete="off" minlength="24" required><small>The deployment operator gives this code to the responsible adult.</small></label><label class="adult-confirmation"><input name="adult_confirmed" type="checkbox" required> I am an adult responsible for this private group and will use learner aliases.</label><p id="form-error" class="form-error" role="alert"></p><button class="primary" type="submit">Create private board</button></form>`:`<div class="sign-in-row"><button id="entra-sign-in" class="secondary" type="button">Sign in with Microsoft</button><span>${status.configured?'Open the board owned by your account.':'Set up a board with the adult owner code.'}</span></div>`}
+        <div class="identity-slot">${gateIdentity(status)}</div>
         <ul class="plain-facts"><li>Private boards require the owner’s Microsoft sign-in.</li><li>Sample mode reloads offline after its first visit.</li><li>All current board tools are free.</li></ul>
       </div>
       <figure class="gate-art"><picture><source type="image/webp" srcset="/art/lantern-room-768.webp 768w, /art/lantern-room-1536.webp 1536w" sizes="(max-width: 900px) 100vw, 56vw"><img src="/art/lantern-room-1536.webp" width="1536" height="1024" alt="An empty mathematics workshop with problem cards beneath a desk lamp" fetchpriority="high" decoding="async"></picture><figcaption>Sample problem cards on a facilitator’s table.</figcaption></figure>
@@ -58,12 +70,7 @@ function renderGate(status:Status){
     <section id="how-it-works" class="public-section steps-section" aria-labelledby="steps-title"><p class="eyebrow">How it works</p><h2 id="steps-title">Run the session in three steps</h2><ol><li><strong>Sequence problems</strong><span>Add prompts in the order you plan to discuss them.</span></li><li><strong>Record attempts</strong><span>Save partial ideas, strategy tags, and a private facilitator note.</span></li><li><strong>Print the recap</strong><span>Make a session record that leaves private notes out.</span></li></ol></section>
     <section class="public-section limits-section" aria-labelledby="privacy-title"><div><p class="eyebrow">Privacy and limits</p><h2 id="privacy-title">Data kept on the board</h2><p>Use aliases instead of learner emails. The board is not a gradebook, chat service, or public learner profile.</p><a href="/privacy">Read the privacy details</a></div><div><p class="eyebrow">Release scope</p><h2>This release is for one private circle</h2><p>It has no paid plan, checkout, organization controls, or extra storage tier.</p><a href="/demo">Use four free strategy prompts</a></div></section>
   </main>${publicFooter()}`;
-  document.querySelector('#entra-sign-in')?.addEventListener('click',()=>signIn());
-  document.querySelector<HTMLFormElement>('#gate-form')?.addEventListener('submit',async e=>{
-    e.preventDefault();const formElement=e.currentTarget as HTMLFormElement;const form=new FormData(formElement);const button=formElement.querySelector<HTMLButtonElement>('button')!;button.disabled=true;button.textContent='Creating…';
-    const data:Record<string,unknown>=Object.fromEntries(form);data.adult_confirmed=form.get('adult_confirmed')==='on';
-    try{await send('/setup',data);await loadBoard()}catch(err){showFormError(err)}finally{button.disabled=false;button.textContent='Create private board'}
-  });
+  bindGate();
 }
 
 async function loadBoard(){

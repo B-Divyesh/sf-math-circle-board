@@ -101,6 +101,7 @@ export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
     if(current.learners.some(learner=>learner.alias.toLowerCase()===alias.toLowerCase())){
       throw new Error('That learner alias is already in the circle.');
     }
+    if(current.learners.length>=12)throw new Error('A private circle can have up to 12 learner aliases.');
     const id=nextId(current.learners);
     current.learners.push({id,alias,created_at:Date.now()/1000});
     writeBoard(current);return {id} as T;
