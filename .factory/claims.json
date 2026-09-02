@@ -49,6 +49,13 @@
     "sandbox": "fresh 390 px browser context; wait for service worker control; go offline and reload"
   },
   {
+    "id": "private-cache-lifecycle",
+    "claim": "The last opened private board and an unsaved draft can stay in this browser for offline use; signing out clears the cached board.",
+    "where": "privacy",
+    "test": "npm run test:claims -- --grep @claim:private-cache-lifecycle",
+    "sandbox": "fresh authenticated board; create an unsaved draft; inspect browser storage; sign out and assert the cached board is removed"
+  },
+  {
     "id": "no-tracking",
     "claim": "The public landing page and sample flow load no analytics, ads, remote fonts, or third-party runtime scripts.",
     "where": "privacy, README",
@@ -96,6 +103,20 @@
     "where": "landing release scope, strategy page, attempt workbench, README, terms",
     "test": "npm run test:claims -- --grep @claim:strategy-palette",
     "sandbox": "fresh demo; open Strategy prompts; count four prompts; choose Draw a diagram; save and reload the attempt"
+  },
+  {
+    "id": "photo-upload-limits",
+    "claim": "Private attempt photos accept JPEG, PNG, and WebP images under 5 MB; invalid or oversized files are rejected and anonymous retrieval fails.",
+    "where": "attempt workbench",
+    "test": "npm run test:claims -- --grep @claim:photo-upload-limits",
+    "sandbox": "fresh authenticated board; upload valid JPEG, PNG, and WebP files; reject invalid and oversized files; request an uploaded file anonymously"
+  },
+  {
+    "id": "individual-delete",
+    "claim": "The signed-in owner can remove an individual photo, learner, or session and its related records.",
+    "where": "privacy, learner list, settings, photo evidence, README",
+    "test": "npm run test:claims -- --grep @claim:individual-delete",
+    "sandbox": "fresh authenticated board with an attempt and photos; remove a photo, learner, and session; assert each related record is absent"
   },
   {
     "id": "full-delete",

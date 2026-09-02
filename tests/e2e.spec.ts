@@ -8,7 +8,6 @@ import {join,resolve} from 'node:path';
 test.describe.configure({mode:'serial'});
 const ownerCode=process.env.MCB_TEST_OWNER_CODE||'adult-setup-code-0123456789';
 const authToken=process.env.MCB_TEST_AUTH_TOKEN||'integration-test-entra-token';
-const authenticate=async(page:Page)=>page.addInitScript(token=>sessionStorage.setItem('mcb:test-access-token',token),authToken);
 const seriousAxe=async(page:Page)=>(await new AxeBuilder({page}).analyze()).violations.filter(item=>['serious','critical'].includes(item.impact||''));
 
 test('plain public first screen and metadata are complete',async({page})=>{
@@ -447,9 +446,10 @@ test('all visible mobile controls have at least a 44 by 44 CSS pixel target',asy
   await context.close();
 });
 
-test('@claim:full-delete the owner can delete the complete private board',async({page})=>{
-  await authenticate(page);
+test('@claim:private-cache-lifecycle @claim:photo-upload-limits @claim:individual-delete @claim:full-delete the owner can use the complete private-board workflow',async({page})=>{
   await page.goto('/');
+  await page.evaluate(token=>sessionStorage.setItem('mcb:test-access-token',token),authToken);
+  await page.reload();
   await page.getByLabel('Facilitator name').fill('Morgan');
   await page.getByLabel('Circle name').fill('Saturday Circle');
   await page.getByLabel('Adult setup code').fill(ownerCode);
@@ -468,18 +468,61 @@ test('@claim:full-delete the owner can delete the complete private board',async(
   await page.getByLabel('Learner alias').fill('Ada');
   await page.getByRole('button',{name:'Add learner'}).click();
   await page.getByRole('link',{name:'Board',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>({
+    board:localStorage.getItem('math-circle-board:offline-board'),
+    draft:Object.keys(localStorage).filter(key=>key.startsWith('mcb-draft:')),
+  }))).toEqual({board:expect.any(String),draft:[]});
+  await page.getByLabel('Private facilitator note').fill('A draft stays here until the next save.');
+  await expect.poll(()=>page.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('mcb-draft:')))).toHaveLength(1);
+  await page.getByRole('link',{name:'Settings'}).click();
+  await page.getByRole('button',{name:'Sign out'}).click();
+  await expect(page.getByRole('button',{name:'Sign in with Microsoft'})).toBeVisible();
+  expect(await page.evaluate(()=>localStorage.getItem('math-circle-board:offline-board'))).toBeNull();
+  await page.evaluate(token=>sessionStorage.setItem('mcb:test-access-token',token),authToken);
+  await page.reload();
+  await expect(page.getByRole('link',{name:'Board',exact:true})).toBeVisible();
+  await page.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('mcb-draft:')).forEach(key=>localStorage.removeItem(key)));
   await page.getByLabel('What they tried').fill('Marked odd gaps and tested the smallest row first.');
   await page.getByLabel('Private facilitator note').fill('Ask for the invariant next time.');
   await page.getByText('◐ Exploring',{exact:true}).click();
   await page.getByRole('button',{name:'Save attempt'}).click();
-  await page.getByLabel('Add photo').setInputFiles('frontend/public/art/lantern-room-768.webp');
-  await expect(page.getByRole('img',{name:/Uploaded attempt/})).toBeVisible();
-  const exported=await page.evaluate(async token=>{const response=await fetch('/api/export',{headers:{Authorization:`Bearer ${token}`}});return response.json()},authToken);
-  expect(exported.attachment_files).toHaveLength(1);
+  const images=[
+    {name:'paper-work.jpg',mimeType:'image/jpeg',buffer:Buffer.from('/9j/4AAQSkZJRgABAQAAAAAAAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAACAAIDAREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAABP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAHCP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AGhRSr//2Q==','base64')},
+    {name:'paper-work.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQMAAABIeJ9nAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURdNrP////3fZX/cAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gkCBjcYW/R8bgAAAAxJREFUCNdjYGBgAAAABAABJzQnCgAAAABJRU5ErkJggg==','base64')},
+    {name:'paper-work.webp',mimeType:'image/webp',buffer:readFileSync('frontend/public/art/lantern-room-768.webp')},
+  ];
+  for(const [index,image] of images.entries()){
+    await page.getByLabel('Add photo').setInputFiles(image);
+    await expect(page.getByText('Photo added privately.')).toBeVisible();
+    await expect(page.locator('[data-delete-file]')).toHaveCount(index+1);
+  }
+  await page.getByLabel('Add photo').setInputFiles({name:'too-large.png',mimeType:'image/png',buffer:Buffer.alloc(5*1024*1024+1)});
+  await expect(page.locator('.toast')).toHaveText('Keep each image under 5 MB.');
+  await page.getByLabel('Add photo').setInputFiles({name:'not-an-image.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});
+  await expect(page.locator('.toast')).toHaveText('Use a valid JPEG, PNG, or WebP image file.');
+  const uploaded=await page.evaluate(async token=>fetch('/api/board',{headers:{Authorization:`Bearer ${token}`}}).then(response=>response.json()),authToken);
+  expect(uploaded.attachments.map((item:{mime:string})=>item.mime).sort()).toEqual(['image/jpeg','image/png','image/webp']);
+  const anonymousFile=await page.request.get(`/api/files/${uploaded.attachments[0].id}`);
+  expect(anonymousFile.status()).toBe(401);
+  const removedPhoto=uploaded.attachments[0].id;
+  page.once('dialog',dialog=>dialog.accept());
+  await page.locator(`[data-delete-file="${removedPhoto}"]`).click();
+  await expect(page.locator(`[data-delete-file="${removedPhoto}"]`)).toHaveCount(0);
+  const afterPhoto=await page.evaluate(async token=>fetch('/api/board',{headers:{Authorization:`Bearer ${token}`}}).then(response=>response.json()),authToken);
+  expect(afterPhoto.attachments.map((item:{id:number})=>item.id)).not.toContain(removedPhoto);
   await page.getByRole('button',{name:'Print recap'}).click();
   await expect(page.getByText('Marked odd gaps and tested the smallest row first.')).toBeVisible();
   await expect(page.getByText('Ask for the invariant next time.')).toHaveCount(0);
+  await page.getByRole('link',{name:'Learners'}).click();
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Remove'}).click();
+  await expect(page.getByText('Ada',{exact:true})).toHaveCount(0);
   await page.getByRole('link',{name:'Settings'}).click();
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Delete session'}).click();
+  await expect(page.getByText('No sessions to delete.')).toBeVisible();
+  const afterIndividualDeletes=await page.evaluate(async token=>fetch('/api/board',{headers:{Authorization:`Bearer ${token}`}}).then(response=>response.json()),authToken);
+  expect({learners:afterIndividualDeletes.learners.length,sessions:afterIndividualDeletes.sessions.length,attempts:afterIndividualDeletes.attempts.length,attachments:afterIndividualDeletes.attachments.length}).toEqual({learners:0,sessions:0,attempts:0,attachments:0});
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Delete the entire board'}).click();
   await expect(page.getByLabel('Facilitator name')).toBeVisible();

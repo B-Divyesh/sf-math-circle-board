@@ -776,7 +776,7 @@ async fn upload(
             "The image could not be read.".into(),
         )
     })?;
-    if bytes.len() > 5 * 1024 * 1024 {
+    if bytes.len() >= 5 * 1024 * 1024 {
         return Err(ApiError(
             StatusCode::PAYLOAD_TOO_LARGE,
             "Keep each image under 5 MB.".into(),

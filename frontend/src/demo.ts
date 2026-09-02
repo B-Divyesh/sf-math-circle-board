@@ -152,7 +152,7 @@ export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
   const uploadMatch=path.match(/^\/attempts\/(\d+)\/upload$/);
   if(uploadMatch&&method==='POST'&&options.body instanceof FormData){
     const file=options.body.get('image');
-    if(!(file instanceof File)||file.size>5*1024*1024)throw new Error('Use a valid JPEG, PNG, or WebP image under 5 MB.');
+    if(!(file instanceof File)||file.size>=5*1024*1024)throw new Error('Use a valid JPEG, PNG, or WebP image under 5 MB.');
     const bytes=new Uint8Array(await file.arrayBuffer());
     const mime=detectedImageMime(bytes);
     if(!mime||!await decodesAsImage(bytes,mime))throw new Error('Use a valid JPEG, PNG, or WebP image under 5 MB.');
