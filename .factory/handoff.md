@@ -1,29 +1,52 @@
-# Math Circle Board — review 2 handoff
+# Math Circle Board — polish round 2 handoff
 
-- **Work order:** `math-circle-board-review-2`
-- **Role:** adversarial reviewer
-- **Reviewed live build:** `aff4299a57c9e74fe042ca5f1a58bc0e37a8e2a2`
-- **Result:** **FAIL** — four unlisted visitor-facing claims remain.
+- **Work order:** `math-circle-board-polish-2`
+- **Repair commit:** `187a3ba61b9b92d29c676c62469111ed694b9c13`
+- **Live URL:** <https://math-circle-board.sociobot.in>
+- **Result:** PASS — no review finding remains.
 
-## What was done
+## What changed
 
-No product code was changed. `.factory/review-2.md` records the complete cold
-read, copy audit, demo isolation check, claims audit, routing/accessibility
-checks, and verification of every earlier review finding.
+- Registered and tested private-cache lifecycle, photo-upload limits/privacy,
+  and individual deletion promises in `.factory/claims.json`.
+- Removed the untestable claim about the exact account record stored by the
+  service. The remaining Microsoft sign-in statement is covered by owner access.
+- Made the documented “under 5 MB” limit exact in both private and demo uploads.
+- Preserved the one-click `?demo=1` sandbox, first screen, legal routes,
+  metadata, 404, keyboard focus, mobile layout, and the full facilitator board
+  workflow.
 
-## How verified
+## Run and verify
 
-- Fresh live Chromium contexts at 390×844 and 1440×900.
-- Demo isolation/reset/exit, session-storage inspection, and request capture.
-- Crawled every discovered same-origin live link.
-- `npm run test:cold-claims` from a temporary clean clone: all 15 declared
-  claim commands passed.
-- `npm test`, `cargo test`, `npm run build`, and `npm run test:e2e` completed
-  locally; the browser suite was reached after the build and Rust checks.
+```sh
+npm ci
+npm test
+npm run build
+npm run test:e2e
+npm run test:cold-claims
+```
 
-## Remaining work
+The container starts with `PORT` alone. It uses `./data` locally and `/data`
+in the deployed container. `npm run test:cold-claims` starts from a temporary
+clean clone and runs every manifest claim individually.
 
-Resolve F-2-1 through F-2-4 in `.factory/review-2.md`: either add a dedicated
-claim and tagged observable test for the private-cache lifecycle, identity
-record, photo-upload limit/privacy, and individual deletion promises, or remove
-the unsupported public statements. Rerun the full review after repair.
+Local evidence is in `.factory/polish-evidence-2/`. The full finding map is
+in `.factory/polish-2.md`.
+
+## Verification evidence
+
+- `npm test`: passed TypeScript, copy contract, 3 Vitest tests, and 12 Rust
+  tests.
+- `npm run build`: passed; the initial application JS is 14.44 KB gzip.
+- `npm run test:e2e`: passed all 26 browser tests, including axe serious/
+  critical checks, mobile, routing, offline demo, rate limiting, and board
+  data controls.
+- `npm run test:cold-claims`: passed all 18 declared commands from a clean
+  clone.
+- `verify-url.sh` passed locally for root and demo with no console errors and
+  complete title/lang/main/alt/button checks.
+
+## Known gaps
+
+None. The product intentionally has no paid tier or organization controls in
+this release; that scoped limitation is stated and tested.

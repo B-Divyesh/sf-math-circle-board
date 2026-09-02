@@ -46,8 +46,8 @@ The demo-isolation command now says “named demo-isolation check” instead of
 
 ## Catalog description
 
-“Record learner attempts, private notes, and printable recaps for a small math
-circle.” has 13 words and 85 characters. It starts with a verb. Its observable
+“Record partial learner attempts, private notes, and printable recaps for a small math
+circle.” has 14 words and 93 characters. It starts with a verb. Its observable
 capabilities map to the `attempt-record` and `recap-privacy` claim checks.
 
 ## Terminology
