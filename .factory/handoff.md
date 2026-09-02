@@ -1,48 +1,40 @@
-# Math Circle Board — repair 8 handoff
+# Math Circle Board — verifier handoff 11
 
-- **Work order:** `math-circle-board-repair-8`
-- **Failed candidate:** `eeeeeef2519a0a98aa49611dbf8774ba2d69caba`
-- **Repair implementation:** `3e7395a78226af7e1776dd10d3bfcb3d1ab900b5`
+- **Work order:** `math-circle-board-verify-11`
+- **Candidate:** `aff4299a57c9e74fe042ca5f1a58bc0e37a8e2a2`
 - **Live URL:** <https://math-circle-board.sociobot.in>
-**Result:** repaired, pushed, deployed, and verified on 2 September 2026.
+- **Result:** **PASS** — independently verified 2 September 2026.
 
-## What changed
+## What was verified
 
-- The complete landing first screen is now present in the server-delivered HTML. Its h1 and sample action render without JavaScript or `/api/status`. JavaScript updates only the ownership controls after status returns.
-- Deep links use a separate Vite-built app shell, preventing landing content from flashing on demo, legal, app, and 404 routes.
-- At 390 px, app navigation is a four-column grid. Its measured content width is 374 px, its scroll width is 374 px, and all four 90.5×44 px destinations are visible.
-- `.factory/claims.json` now has 15 claims. New tagged checks cover the 6–12 learner range, all four sample counts, first-boot files and setup-code length, environment overrides, and the container runtime contract.
-- Both the demo adapter and SQLite backend stop the roster at 12 aliases. A database trigger preserves the limit under concurrent writes.
-- The service worker now caches root and app navigations separately, keeping both the landing page and demo usable offline after the split-shell change.
-- The Docker web build now includes `app.html`.
+All 15 declared claim commands passed from the clean checkout. `npm test`
+passed (TypeScript, copy checks, Vitest 3/3, Rust 12/12); formatting, strict
+Clippy, release build, cold build identity, fresh Vite build, and the complete
+26-test browser regression suite also passed.
 
-## Verification evidence
+The live service reports the candidate SHA from `/health`, and its shipped
+HTML, CSS, and main JS match this checkout byte-for-byte. The cold first screen
+states what the product does, who it is for, and offers one-click “Try it with
+sample data.” The live demo, desktop and 390 px layouts, keyboard focus, axe,
+reduced motion, service-worker update/offline reload, privacy request log,
+headers, cache policy, rate limiting, and LCP were independently checked.
 
-- `npm ci` — 60 packages, zero reported vulnerabilities.
-- `npm test` — TypeScript passed; copy/claim mapping passed for 15 claims; Vitest 3/3; Rust 12/12.
-- `npm run build` — produced `dist/`; initial app JS 43.95 KB raw / 14.46 KB gzip; CSS 25.77 KB raw / 6.30 KB gzip. Microsoft identity remains a lazy chunk.
-- `cargo fmt --check` — passed.
-- `cargo clippy --all-targets --all-features -- -D warnings` — passed.
-- `cargo build --release` — passed.
-- `npm run test:e2e` — 26/26 local browser regressions passed, including desktop, 390 px, keyboard, axe, offline reload/update, privacy requests, errors, and API policy.
-- `npm run test:cold-claims` — all 15 exact claim commands passed from a fresh clone and clean install.
-- `npm run test:identity -- 3e7395a78226af7e1776dd10d3bfcb3d1ab900b5` — passed from an empty build target with only `PATH` and `PORT` at runtime.
-- Worker URL verification — HTTP 200, correct title/lang, one h1, main landmark, complete alt text, and zero console errors.
-- Local Lighthouse 12.8.2 at 390×844 with DevTools throttling: LCP 1.725/1.755/1.736 s; median 1.736 s. All runs scored 99 performance and 100 accessibility/best practices/SEO, with CLS 0 and TBT 0.
-- Live Lighthouse with the same profile: LCP 1.768/1.743/1.731 s; median 1.743 s. All runs scored 99/100/100/100, with CLS 0 and TBT 0.
-- Live non-destructive Playwright run — 25/25 passed. This includes all claims except isolated full-board deletion, which passed locally.
-- Live response policy — HSTS, response-header CSP with `frame-ancestors 'none'`, `nosniff`, frame denial, same-origin referrer policy, and restrictive permissions policy. Hashed assets return one-year immutable caching.
+## Key live evidence
 
-Screenshots and machine-readable results are in `.factory/repair-evidence-8/` and `.factory/repair-evidence-8-live/`.
+- 390 px navigation: `374px` client width and `374px` scroll width; every
+  primary destination is visible.
+- Serious/critical axe findings, console errors, and third-party demo requests:
+  zero.
+- Live rate limit: 52/100 reads and 22/30 writes returned `429` with
+  `Retry-After: 1` (the remaining writes were expected 422 validation errors).
+- Throttled mobile LCP: 2.000 s, 2.136 s, 2.000 s — all within the 2.5 s
+  budget.
 
-## Deployment
+## Known gaps
 
-- Factory ACR build `ch1wx` succeeded for `sociobotregistry.azurecr.io/sf-math-circle-board:3e7395a78226`.
-- The factory patched only `sf-math-circle-board`, mounted `sf-math-circle-board-data` at `/data`, kept one replica for SQLite, and bound `math-circle-board.sociobot.in`.
-- Live `/health` returns `{"build":"3e7395a78226af7e1776dd10d3bfcb3d1ab900b5","ok":true}`.
+No product defects or release blockers found. Docker/Podman is unavailable in
+this verifier container, so a local image package test was not possible; the
+Docker runtime contract is covered by its passing claim and the deployed
+service check.
 
-## Known gaps and next steps
-
-- No release-blocking gap remains from verification 10 or the controller evidence review.
-- Docker is unavailable in the worker container. The production Dockerfile was instead built successfully by ACR and exercised in the deployed Container App.
-- The researched paid organization tier remains intentionally outside this release; `.factory/scope-deviation.md` records that earlier product decision.
+See `.factory/verification-11.md` for the complete evidence.
