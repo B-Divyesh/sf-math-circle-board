@@ -9,14 +9,14 @@
   {
     "id": "attempt-record",
     "claim": "The board records partial learner attempts, strategy status, and private facilitator notes.",
-    "where": "landing page, attempt workbench, README",
+    "where": "landing page, attempt workbench, README, catalog description",
     "test": "npm run test:claims -- --grep @claim:attempt-record",
     "sandbox": "fresh demo; edit an attempt and private note; save and reload"
   },
   {
     "id": "recap-privacy",
     "claim": "The printable session recap includes learner thinking and leaves private facilitator notes out.",
-    "where": "landing page, recap, README",
+    "where": "landing page, recap, README, catalog description",
     "test": "npm run test:claims -- --grep @claim:recap-privacy",
     "sandbox": "fresh demo; save distinct public thinking and private note; open printable recap"
   },

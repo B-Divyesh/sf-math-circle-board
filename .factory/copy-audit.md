@@ -44,6 +44,12 @@ The review’s flagged test sentence is now two sentences of 16 and 11 words.
 The demo-isolation command now says “named demo-isolation check” instead of
 “manifest claim.” No README sentence exceeds the 22-word limit.
 
+## Catalog description
+
+“Record learner attempts, private notes, and printable recaps for a small math
+circle.” has 13 words and 85 characters. It starts with a verb. Its observable
+capabilities map to the `attempt-record` and `recap-privacy` claim checks.
+
 ## Terminology
 
 | Concept | Word used |
