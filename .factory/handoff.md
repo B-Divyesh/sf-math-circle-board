@@ -1,40 +1,29 @@
-# Math Circle Board — verifier handoff 11
+# Math Circle Board — review 2 handoff
 
-- **Work order:** `math-circle-board-verify-11`
-- **Candidate:** `aff4299a57c9e74fe042ca5f1a58bc0e37a8e2a2`
-- **Live URL:** <https://math-circle-board.sociobot.in>
-- **Result:** **PASS** — independently verified 2 September 2026.
+- **Work order:** `math-circle-board-review-2`
+- **Role:** adversarial reviewer
+- **Reviewed live build:** `aff4299a57c9e74fe042ca5f1a58bc0e37a8e2a2`
+- **Result:** **FAIL** — four unlisted visitor-facing claims remain.
 
-## What was verified
+## What was done
 
-All 15 declared claim commands passed from the clean checkout. `npm test`
-passed (TypeScript, copy checks, Vitest 3/3, Rust 12/12); formatting, strict
-Clippy, release build, cold build identity, fresh Vite build, and the complete
-26-test browser regression suite also passed.
+No product code was changed. `.factory/review-2.md` records the complete cold
+read, copy audit, demo isolation check, claims audit, routing/accessibility
+checks, and verification of every earlier review finding.
 
-The live service reports the candidate SHA from `/health`, and its shipped
-HTML, CSS, and main JS match this checkout byte-for-byte. The cold first screen
-states what the product does, who it is for, and offers one-click “Try it with
-sample data.” The live demo, desktop and 390 px layouts, keyboard focus, axe,
-reduced motion, service-worker update/offline reload, privacy request log,
-headers, cache policy, rate limiting, and LCP were independently checked.
+## How verified
 
-## Key live evidence
+- Fresh live Chromium contexts at 390×844 and 1440×900.
+- Demo isolation/reset/exit, session-storage inspection, and request capture.
+- Crawled every discovered same-origin live link.
+- `npm run test:cold-claims` from a temporary clean clone: all 15 declared
+  claim commands passed.
+- `npm test`, `cargo test`, `npm run build`, and `npm run test:e2e` completed
+  locally; the browser suite was reached after the build and Rust checks.
 
-- 390 px navigation: `374px` client width and `374px` scroll width; every
-  primary destination is visible.
-- Serious/critical axe findings, console errors, and third-party demo requests:
-  zero.
-- Live rate limit: 52/100 reads and 22/30 writes returned `429` with
-  `Retry-After: 1` (the remaining writes were expected 422 validation errors).
-- Throttled mobile LCP: 2.000 s, 2.136 s, 2.000 s — all within the 2.5 s
-  budget.
+## Remaining work
 
-## Known gaps
-
-No product defects or release blockers found. Docker/Podman is unavailable in
-this verifier container, so a local image package test was not possible; the
-Docker runtime contract is covered by its passing claim and the deployed
-service check.
-
-See `.factory/verification-11.md` for the complete evidence.
+Resolve F-2-1 through F-2-4 in `.factory/review-2.md`: either add a dedicated
+claim and tagged observable test for the private-cache lifecycle, identity
+record, photo-upload limit/privacy, and individual deletion promises, or remove
+the unsupported public statements. Rerun the full review after repair.
