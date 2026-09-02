@@ -1,6 +1,7 @@
 # Landing-page copy audit
 
-Audited 1 September 2026. Counts treat hyphenated terms and `6–12` as one word. No line exceeds 22 words, and no line uses a banned marketing word.
+Audited 2 September 2026. Counts treat hyphenated terms and `6–12` as one
+word. No line exceeds 22 words, and no line uses a banned marketing word.
 
 | Landing text | Words |
 |---|---:|
@@ -15,8 +16,7 @@ Audited 1 September 2026. Counts treat hyphenated terms and `6–12` as one word
 | Set up a board with the adult owner code. | 9 |
 | Private boards require the owner’s Microsoft sign-in. | 7 |
 | Sample mode reloads offline after its first visit. | 8 |
-| Core board: free. | 3 |
-| Circle Plus: not for sale yet. | 6 |
+| All current board tools are free. | 6 |
 | Sample problem cards on a facilitator’s table. | 7 |
 | See one session at a glance | 6 |
 | The board keeps the problem order, learner status, and next discussion prompt together. | 12 |
@@ -29,10 +29,9 @@ Audited 1 September 2026. Counts treat hyphenated terms and `6–12` as one word
 | Use aliases instead of learner emails. | 6 |
 | The board is not a gradebook, chat service, or public learner profile. | 12 |
 | Read the privacy details | 4 |
-| Circle Plus purchase is unavailable | 5 |
-| Checkout registration is not complete. | 5 |
-| The free board remains available. | 5 |
-| Preview four strategy prompts | 4 |
+| This release is for one private circle | 8 |
+| It has no paid plan, checkout, organization controls, or extra storage tier. | 12 |
+| Use four free strategy prompts | 5 |
 | Plan and record small math-circle sessions. | 6 |
 
 ## Terminology
@@ -45,4 +44,5 @@ Audited 1 September 2026. Counts treat hyphenated terms and `6–12` as one word
 | Facilitator-only writing | private note |
 | Browser-only sample | demo / sample mode |
 | Printable session record | recap |
-| Paid add-on | Circle Plus |
+| Reusable thinking starter | strategy prompt |
+| Product boundary | release scope |

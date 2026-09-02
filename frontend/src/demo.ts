@@ -67,6 +67,26 @@ function nextId(items:Array<{id:number}>):number{
   return Math.max(0,...items.map(item=>item.id))+1;
 }
 
+type ImageMime='image/jpeg'|'image/png'|'image/webp';
+
+function detectedImageMime(bytes:Uint8Array):ImageMime|null{
+  if(bytes.length>=3&&bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff)return'image/jpeg';
+  if(bytes.length>=8&&[0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((value,index)=>bytes[index]===value))return'image/png';
+  if(bytes.length>=12&&String.fromCharCode(...bytes.slice(0,4))==='RIFF'&&String.fromCharCode(...bytes.slice(8,12))==='WEBP')return'image/webp';
+  return null;
+}
+
+async function decodesAsImage(bytes:Uint8Array,mime:ImageMime):Promise<boolean>{
+  const payload=new Uint8Array(bytes).buffer;
+  const url=URL.createObjectURL(new Blob([payload],{type:mime}));
+  try{
+    const image=new Image();
+    image.src=url;
+    await image.decode();
+    return image.naturalWidth>0&&image.naturalHeight>0;
+  }catch{return false}finally{URL.revokeObjectURL(url)}
+}
+
 export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
   const method=(options.method||'GET').toUpperCase();
   if(path==='/status')return {configured:true,signed_in:true,authenticated:true,facilitator:'Morgan'} as T;
@@ -131,13 +151,15 @@ export async function demoApi<T>(path:string,options:RequestInit={}):Promise<T>{
   const uploadMatch=path.match(/^\/attempts\/(\d+)\/upload$/);
   if(uploadMatch&&method==='POST'&&options.body instanceof FormData){
     const file=options.body.get('image');
-    if(!(file instanceof File)||!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024)throw new Error('Use a JPEG, PNG, or WebP image under 5 MB.');
-    const id=nextId(current.attachments);
+    if(!(file instanceof File)||file.size>5*1024*1024)throw new Error('Use a valid JPEG, PNG, or WebP image under 5 MB.');
     const bytes=new Uint8Array(await file.arrayBuffer());
+    const mime=detectedImageMime(bytes);
+    if(!mime||!await decodesAsImage(bytes,mime))throw new Error('Use a valid JPEG, PNG, or WebP image under 5 MB.');
+    const id=nextId(current.attachments);
     let binary='';
     for(const byte of bytes)binary+=String.fromCharCode(byte);
-    sessionStorage.setItem(`${demoFilePrefix}${id}`,JSON.stringify({mime:file.type,data:btoa(binary)}));
-    current.attachments.push({id,attempt_id:Number(uploadMatch[1]),original_name:file.name, mime:file.type,created_at:Math.floor(Date.now()/1000)});
+    sessionStorage.setItem(`${demoFilePrefix}${id}`,JSON.stringify({mime,data:btoa(binary)}));
+    current.attachments.push({id,attempt_id:Number(uploadMatch[1]),original_name:file.name, mime,created_at:Math.floor(Date.now()/1000)});
     writeBoard(current);return {id} as T;
   }
   const fileMatch=path.match(/^\/files\/(\d+)$/);

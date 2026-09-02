@@ -4,7 +4,7 @@ Plan and record small math-circle sessions. The board is for volunteer facilitat
 
 Facilitators can sequence open problems, record partial attempts and strategy tags, keep private notes, and print a recap. The roster uses learner aliases and does not ask for learner email addresses. The board is not a gradebook, chat service, or public learner profile.
 
-[Try the isolated sample board](https://math-circle-board.sociobot.in/?demo=1). It works without an account, uses only `demo:` session-storage keys, and never calls the private board API. Reset restores the original two sessions, three learners, four problems, and four attempts.
+[Try the isolated sample board](https://math-circle-board.sociobot.in/demo). It works without an account, uses only `demo:` session-storage keys, and never calls the private board API. Reset restores the original two sessions, three learners, four problems, and four attempts.
 
 ## Run locally
 
@@ -60,6 +60,6 @@ Private board data requires the signed-in owner. The public landing page and sam
 
 Settings exports the board record as JSON. A private facilitator note is not included in the printable recap. The owner can delete individual records or the complete private board.
 
-The core board is free. Circle Plus purchase is unavailable until checkout registration is complete. The sample board previews its four reusable strategy prompts. See [`/privacy`](https://math-circle-board.sociobot.in/privacy) and [`/terms`](https://math-circle-board.sociobot.in/terms).
+All current board tools are free, including four reusable strategy prompts. This release has no paid plan, checkout, organization controls, or extra storage tier. See [`/privacy`](https://math-circle-board.sociobot.in/privacy), [`/terms`](https://math-circle-board.sociobot.in/terms), and the [scope decision](.factory/scope-deviation.md).
 
 Visual direction and original-asset provenance are in [`.factory/design.md`](.factory/design.md). Licensed under the MIT License; see [`LICENSE`](LICENSE).

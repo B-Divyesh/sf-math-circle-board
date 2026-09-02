@@ -1038,7 +1038,7 @@ fn app(state: Shared, dist: PathBuf) -> Router {
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static("default-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://api.sociobot.in https://sociobotcustomers.ciamlogin.com; frame-src https://sociobotcustomers.ciamlogin.com; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://api.sociobot.in https://sociobotcustomers.ciamlogin.com"),
+            HeaderValue::from_static("default-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://sociobotcustomers.ciamlogin.com; frame-src https://sociobotcustomers.ciamlogin.com; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::HeaderName::from_static("permissions-policy"),

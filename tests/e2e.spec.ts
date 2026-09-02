@@ -16,7 +16,7 @@ test('plain public first screen and metadata are complete',async({page})=>{
   await expect(page).toHaveTitle('Math Circle Board — Plan small math-circle sessions');
   await expect(page.getByRole('heading',{level:1})).toHaveText('Plan and record small math-circle sessions');
   await expect(page.getByText('For volunteer math circle facilitators')).toBeVisible();
-  await expect(page.getByRole('link',{name:'Try it with sample data'})).toHaveAttribute('href','/?demo=1');
+  await expect(page.getByRole('link',{name:'Try it with sample data'})).toHaveAttribute('href','/demo');
   await expect(page.getByRole('button',{name:'Sign in with Microsoft'})).toBeVisible();
   await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href','https://math-circle-board.sociobot.in/');
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content',/social-card\.webp$/);
@@ -70,7 +70,18 @@ test('both demo entry points use the demo-specific document title',async({page})
     await page.goto(route);
     await expect(page).toHaveURL(/\/board\?demo=1(?:#main)?$/);
     await expect(page).toHaveTitle('Demo — Math Circle Board');
+    await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href','https://math-circle-board.sociobot.in/demo');
   }
+});
+
+test('demo rejects corrupt image bytes and recovers with a valid image like the backend',async({page})=>{
+  await page.goto('/?demo=1');
+  await page.getByLabel('Add photo').setInputFiles({name:'corrupt.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});
+  await expect(page.locator('.toast')).toHaveText('Use a valid JPEG, PNG, or WebP image under 5 MB.');
+  await expect(page.getByRole('img',{name:/Uploaded attempt/})).toHaveCount(0);
+  expect(await page.evaluate(()=>JSON.parse(sessionStorage.getItem('demo:math-circle-board:board')||'{}').attachments.length)).toBe(0);
+  await page.getByLabel('Add photo').setInputFiles('frontend/public/art/lantern-room-768.webp');
+  await expect(page.getByRole('img',{name:/Uploaded attempt/})).toBeVisible();
 });
 
 test('@claim:attempt-record demo records partial attempts and private notes',async({page})=>{
@@ -177,19 +188,21 @@ test('@claim:rate-limits read and write bursts return 429 with Retry-After',asyn
   expect(writeLimited[0].headers()['retry-after']).toMatch(/^\d+$/);
 });
 
-test('@claim:plus-availability the free board is available while Plus purchase is unavailable',async({page})=>{
+test('@claim:release-scope the public product has no untestable paid or organization tier',async({page})=>{
   await page.goto('/');
-  await expect(page.getByText('Core board: free. Circle Plus: not for sale yet.')).toBeVisible();
-  await expect(page.getByRole('heading',{name:'Circle Plus purchase is unavailable'})).toBeVisible();
-  await expect(page.getByText('Checkout registration is not complete. The free board remains available.')).toBeVisible();
+  await expect(page.getByText('All current board tools are free.')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'This release is for one private circle'})).toBeVisible();
+  await expect(page.getByText('It has no paid plan, checkout, organization controls, or extra storage tier.')).toBeVisible();
   await expect(page.locator(`a[href="https://api.sociobot.in/api/v1/products/math-circle-board/checkout"]`)).toHaveCount(0);
+  await page.goto('/terms');
+  await expect(page.getByText('This release has no paid plan, checkout, organization controls, or extra storage tier.')).toBeVisible();
 });
 
-test('@claim:plus-strategy-palette Plus adds and saves a reusable strategy prompt',async({page})=>{
+test('@claim:strategy-palette free strategy prompts add and save a reusable prompt',async({page})=>{
   await page.goto('/plus?demo=1');
-  await expect(page.getByRole('heading',{name:'Four strategy prompts are available'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Four strategy prompts are included'})).toBeVisible();
   await page.getByRole('link',{name:'Board',exact:true}).click();
-  const palette=page.getByLabel('Circle Plus strategy palette');
+  const palette=page.getByLabel('Strategy prompt palette');
   await expect(palette.getByRole('button')).toHaveCount(4);
   await palette.getByRole('button',{name:'+ Draw a diagram',exact:true}).click();
   await expect(page.getByRole('button',{name:'Remove strategy Draw a diagram'})).toBeVisible();
@@ -233,6 +246,23 @@ test('legal, 404, mobile, keyboard, routes, and focus pass regression checks',as
   expect(await page.evaluate(()=>document.body.scrollWidth)).toBe(390);
   expect(await seriousAxe(page)).toEqual([]);
   expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('390 px public navigation shows every destination without horizontal clipping',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844}});
+  const page=await context.newPage();
+  await page.goto('/');
+  const nav=page.getByRole('navigation',{name:'Public navigation'});
+  const navWidth=await nav.evaluate(element=>({clientWidth:element.clientWidth,scrollWidth:element.scrollWidth}));
+  expect(navWidth.scrollWidth).toBeLessThanOrEqual(navWidth.clientWidth);
+  const measurements=await nav.locator('a').evaluateAll(links=>links.map(link=>{const rect=link.getBoundingClientRect();return {label:link.textContent?.trim(),left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,width:rect.width,height:rect.height}}));
+  for(const link of measurements){
+    expect(link.left,`${link.label} starts outside the viewport`).toBeGreaterThanOrEqual(0);
+    expect(link.right,`${link.label} clips outside the viewport`).toBeLessThanOrEqual(390);
+    expect(link.width,`${link.label} is too narrow`).toBeGreaterThanOrEqual(44);
+    expect(link.height,`${link.label} is too short`).toBeGreaterThanOrEqual(44);
+  }
   await context.close();
 });
 

@@ -1,6 +1,6 @@
 # Sample demo
 
-- Entry point: `https://math-circle-board.sociobot.in/?demo=1` (local: `http://localhost:8080/?demo=1`). `/demo` redirects in the client to the same mode.
+- Entry point and canonical URL: `https://math-circle-board.sociobot.in/demo` (local: `http://localhost:8080/demo`). `?demo=1` remains a supported direct-entry URL and canonicalizes to `/demo`.
 - Setup: none. The first rendered screen is the working board.
 - Sample: Saturday Problem Circle with two dated sessions, three learner aliases, four open problems, and four partial/shared attempts. Attempts include strategies and facilitator-only notes.
 - Isolation: the browser adapter handles every board operation. It never calls `/api/*`. State uses only the `demo:math-circle-board:*` namespace in `sessionStorage`; it cannot read or write the real SQLite board.

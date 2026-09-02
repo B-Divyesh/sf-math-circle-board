@@ -56,18 +56,18 @@
     "sandbox": "fresh server; concurrent read and write bursts from separate fixed forwarded IPs"
   },
   {
-    "id": "plus-availability",
-    "claim": "The core board is free; Circle Plus purchase is unavailable until checkout registration is complete.",
-    "where": "landing facts, Plus section, README, privacy, terms",
-    "test": "npm run test:claims -- --grep @claim:plus-availability",
-    "sandbox": "fresh public page; assert the unavailability notice and absence of the unavailable checkout link"
+    "id": "release-scope",
+    "claim": "This release has no paid plan, checkout, organization controls, or extra storage tier.",
+    "where": "landing facts, strategy page, README, privacy, terms, scope deviation",
+    "test": "npm run test:claims -- --grep @claim:release-scope",
+    "sandbox": "fresh public page and terms page; assert the explicit scope statement and absence of a checkout link"
   },
   {
-    "id": "plus-strategy-palette",
-    "claim": "Circle Plus provides four reusable strategy prompts; choosing one adds it to the attempt and saving keeps it after reload.",
-    "where": "landing pricing, Plus page, attempt workbench, README, terms",
-    "test": "npm run test:claims -- --grep @claim:plus-strategy-palette",
-    "sandbox": "fresh demo; open Plus; count four prompts; choose Draw a diagram; save and reload the attempt"
+    "id": "strategy-palette",
+    "claim": "Four free reusable strategy prompts add to an attempt and remain after saving and reloading.",
+    "where": "landing release scope, strategy page, attempt workbench, README, terms",
+    "test": "npm run test:claims -- --grep @claim:strategy-palette",
+    "sandbox": "fresh demo; open Strategy prompts; count four prompts; choose Draw a diagram; save and reload the attempt"
   },
   {
     "id": "full-delete",

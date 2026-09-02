@@ -11,6 +11,7 @@
     "test:e2e": "bash scripts/run-e2e.sh",
     "test:claims": "bash scripts/run-e2e.sh",
     "test:cold-claims": "bash scripts/test-cold-claims.sh",
+    "test:identity": "bash scripts/verify-build-identity.sh",
     "preview": "vite preview --host 0.0.0.0"
   },
   "devDependencies": {
